@@ -11,11 +11,12 @@
 | Phase 6 | `0e460484c7c1298af44a4adb4b90fca1e124183f` | `2026-04-13` | `Build single-file bundle for persistence and import controls` | Committed |
 | Phase 7 | `af45a63826a360598164015d84be0d2f9eb1b64e` | `2026-04-13` | `Expand yard with generator big-bus and mechanical node support` | Committed |
 | Phase 8 | `1d3482f4edfba70ec4d0a10ce7fde857efcd4991` | `2026-04-13` | `Big Bus geometry update for all gear` | Committed |
-| Phase 9 | `WORKTREE (uncommitted)` | `2026-04-13` | `Implement protective isolation auto-trip breakers` | Completed in workspace |
-| Phase 10 | `WORKTREE (uncommitted)` | `2026-04-14` | `Implement equipment identity and synchronized source paralleling` | Completed in workspace |
-| Phase 11 | `WORKTREE (uncommitted)` | `2026-04-14` | `Add docked SCADA dashboard for source control and breaker reset` | Completed in workspace |
-| Maintenance | `WORKTREE (uncommitted)` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Completed in workspace |
-| Maintenance | `WORKTREE (uncommitted)` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Completed in workspace |
+| Phase 9 | `6ae264482bbf10a9113a05493e41c88310c548f9` | `2026-04-13` | `Implement protective isolation auto-trip breakers` | Committed |
+| Phase 10 | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Implement equipment identity and synchronized source paralleling` | Committed |
+| Phase 11 | `17ed10fee00b6d88bc3cf2264ad95b46828833c9` | `2026-04-14` | `Add docked SCADA dashboard for source control and breaker reset` | Committed |
+| Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
+| Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
+| Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
 
 ## Timeline of Architectural Evolution
 
@@ -153,7 +154,7 @@
   - Existing persistence/import/protection limitations remain.
 
 ### Phase 9: Protective Isolation
-- Revision: `WORKTREE (uncommitted)`
+- Revision: `6ae264482bbf10a9113a05493e41c88310c548f9`
 - Date: `2026-04-13`
 - Subject: `Implement protective isolation auto-trip breakers`
 - Major additions:
@@ -170,7 +171,7 @@
   - No relay timing/selective coordination hierarchy is modeled yet.
 
 ### Phase 10: Identity and Synchronization
-- Revision: `WORKTREE (uncommitted)`
+- Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
 - Subject: `Implement equipment identity and synchronized source paralleling`
 - Major additions:
@@ -187,7 +188,7 @@
   - Validation code was updated, but automated Vitest execution remains blocked in this shell until `node`/`npm` are available.
 
 ### Phase 11: SCADA Dashboard
-- Revision: `WORKTREE (uncommitted)`
+- Revision: `17ed10fee00b6d88bc3cf2264ad95b46828833c9`
 - Date: `2026-04-14`
 - Subject: `Add docked SCADA dashboard for source control and breaker reset`
 - Major additions:
@@ -203,7 +204,7 @@
   - Breaker reset is global/manual only; there is no selective reset or breaker grouping model.
 
 ### Maintenance Update: Dependency Inventory
-- Revision: `WORKTREE (uncommitted)`
+- Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
 - Subject: `Add DEPENDENCIES.md dependency inventory`
 - Major additions:
@@ -215,7 +216,7 @@
   - Dependency inventory is documentation only; `package.json` and `package-lock.json` remain the canonical install sources.
 
 ### Maintenance Update: Dependency Self-Validation
-- Revision: `WORKTREE (uncommitted)`
+- Revision: `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1`
 - Date: `2026-04-14`
 - Subject: `Add dependency self-validation tooling and setup guidance`
 - Major additions:
@@ -229,7 +230,7 @@
   - Initial Windows execution path used a direct `spawnSync("npm.cmd", ...)` call, which was later repaired in a follow-up maintenance pass.
 
 ### Maintenance Update: Windows Dependency Checker Repair
-- Revision: `WORKTREE (uncommitted)`
+- Revision: `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c`
 - Date: `2026-04-14`
 - Subject: `Repair Windows npm launch path for dependency self-check`
 - Major additions:
