@@ -209,7 +209,20 @@
 - Engine-state evolution:
   - No graph traversal, protection, synchronization, or React Flow behavior changed.
 - Unresolved items at phase end:
-  - Automated execution of the new dependency checker is still blocked in this shell until Node/npm are installed and available on PATH.
+  - Initial Windows execution path used a direct `spawnSync("npm.cmd", ...)` call, which was later repaired in a follow-up maintenance pass.
+
+### Maintenance Update: Windows Dependency Checker Repair
+- Revision: `WORKTREE (uncommitted)`
+- Date: `2026-04-14`
+- Subject: `Repair Windows npm launch path for dependency self-check`
+- Major additions:
+  - Reworked `scripts/check-deps.mjs` so it no longer depends on nested npm subprocess launches during validation.
+  - Added direct inspection of `node_modules` and `package-lock.json` to verify declared top-level packages are installed at the locked versions and to detect top-level entries not tracked by the lockfile.
+  - Re-verified the dependency checker from both `node scripts/check-deps.mjs` and `npm run check:deps` on this Windows workspace.
+- Engine-state evolution:
+  - No graph traversal, protection, synchronization, or React Flow behavior changed.
+- Unresolved items at phase end:
+  - None specific to dependency-check command execution on Windows in the current workspace.
 
 ## Cumulative System State (Latest)
 
@@ -246,6 +259,7 @@
 - Tooling guardrails:
   - `package.json` now declares a Node engine policy of `^20.19.0 || >=22.12.0`.
   - `scripts/check-deps.mjs` validates Node version, manifest/lockfile parity, `DEPENDENCIES.md` parity, `node_modules` presence, and top-level npm install health.
+  - Dependency validation no longer relies on nested npm process launches, allowing `npm run check:deps` to work in this repo environment.
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
@@ -305,5 +319,4 @@
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
-- Automated test execution is currently blocked in this shell because `node`/`npm` are not available on PATH or in standard local install locations.
-- Dependency self-validation exists, but it cannot be exercised in this shell until Node/npm are installed.
+- Automated simulation test execution beyond dependency validation still depends on the current workspace toolchain remaining installed and healthy.

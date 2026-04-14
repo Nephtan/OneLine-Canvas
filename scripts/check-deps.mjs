@@ -1,6 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import process from "node:process";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
@@ -162,47 +161,96 @@ const ensureDependenciesDocInSync = (packageJson, markdown) => {
   }
 };
 
-const runNpmLs = () => {
-  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-  const result = spawnSync(npmCommand, ["ls", "--depth=0", "--json"], {
-    cwd: REPO_ROOT,
-    encoding: "utf8",
-  });
+const isDirectoryLike = (dirent) => dirent.isDirectory() || dirent.isSymbolicLink();
 
-  if (result.error) {
-    fail(
-      `Unable to execute ${npmCommand}. Verify that npm is installed and available on PATH. ${result.error.message}`,
-    );
-  }
+const collectInstalledTopLevelPackages = () => {
+  const packageNames = [];
+  const entries = readdirSync(NODE_MODULES_PATH, { withFileTypes: true });
 
-  const stdout = result.stdout?.trim();
-  let payload = {};
-
-  if (stdout) {
-    try {
-      payload = JSON.parse(stdout);
-    } catch (error) {
-      fail(`npm ls returned non-JSON output. ${error.message}`);
+  for (const entry of entries) {
+    if (entry.name === ".bin" || entry.name === ".package-lock.json") {
+      continue;
     }
+
+    if (!isDirectoryLike(entry)) {
+      continue;
+    }
+
+    if (entry.name.startsWith("@")) {
+      const scopePath = path.join(NODE_MODULES_PATH, entry.name);
+      const scopedEntries = readdirSync(scopePath, { withFileTypes: true });
+
+      for (const scopedEntry of scopedEntries) {
+        if (!isDirectoryLike(scopedEntry)) {
+          continue;
+        }
+
+        packageNames.push(`${entry.name}/${scopedEntry.name}`);
+      }
+
+      continue;
+    }
+
+    packageNames.push(entry.name);
   }
 
-  const problems = Array.isArray(payload.problems) ? payload.problems : [];
-  const flaggedProblems = problems.filter((problem) => {
-    const normalized = problem.toLowerCase();
-    return (
-      normalized.includes("missing:") ||
-      normalized.includes("invalid:") ||
-      normalized.includes("extraneous:")
+  return packageNames.sort((left, right) => left.localeCompare(right));
+};
+
+const collectLockfileTopLevelPackages = (packageLock) =>
+  Object.keys(packageLock?.packages ?? {})
+    .filter((key) => key.startsWith("node_modules/"))
+    .map((key) => key.slice("node_modules/".length))
+    .filter((packageName) => !packageName.includes("/node_modules/"))
+    .sort((left, right) => left.localeCompare(right));
+
+const ensureInstalledTopLevelPackages = (packageJson, packageLock) => {
+  const declaredPackages = [
+    ...Object.keys(normalizePackageMap(packageJson.dependencies)),
+    ...Object.keys(normalizePackageMap(packageJson.devDependencies)),
+  ];
+  const lockPackages = packageLock?.packages ?? {};
+  const actualTopLevelPackages = collectInstalledTopLevelPackages();
+  const actualTopLevelSet = new Set(actualTopLevelPackages);
+  const expectedTopLevelSet = new Set(collectLockfileTopLevelPackages(packageLock));
+  const extraneousPackages = actualTopLevelPackages.filter(
+    (packageName) => !expectedTopLevelSet.has(packageName),
+  );
+
+  if (extraneousPackages.length > 0) {
+    fail(
+      `Found top-level packages that are not tracked by package-lock.json: ${extraneousPackages.join(", ")}. Repair the workspace with npm ci and rerun npm run check:deps.`,
     );
-  });
+  }
 
-  if (result.status !== 0 || flaggedProblems.length > 0) {
-    const summary =
-      flaggedProblems.length > 0
-        ? flaggedProblems.join("; ")
-        : (result.stderr || "npm ls reported dependency problems.").trim();
+  for (const packageName of declaredPackages) {
+    const installedPackageJsonPath = path.join(
+      NODE_MODULES_PATH,
+      ...packageName.split("/"),
+      "package.json",
+    );
+    const lockEntry = lockPackages[`node_modules/${packageName}`];
 
-    fail(`${summary} Repair the workspace with npm ci and rerun npm run check:deps.`);
+    if (!actualTopLevelSet.has(packageName) || !existsSync(installedPackageJsonPath)) {
+      fail(`${packageName} is missing from node_modules. Run npm ci and rerun npm run check:deps.`);
+    }
+
+    if (!lockEntry || typeof lockEntry.version !== "string") {
+      fail(`package-lock.json is missing the resolved top-level entry for ${packageName}.`);
+    }
+
+    const installedPackageJson = loadJson(installedPackageJsonPath);
+    const installedVersion = installedPackageJson?.version;
+
+    if (typeof installedVersion !== "string") {
+      fail(`Installed package metadata for ${packageName} is missing a version field.`);
+    }
+
+    if (installedVersion !== lockEntry.version) {
+      fail(
+        `${packageName} is installed at ${installedVersion}, but package-lock.json expects ${lockEntry.version}. Repair the workspace with npm ci and rerun npm run check:deps.`,
+      );
+    }
   }
 };
 
@@ -224,8 +272,8 @@ if (!existsSync(NODE_MODULES_PATH)) {
   fail("node_modules is missing. Run npm ci to install the exact dependencies from package-lock.json.");
 }
 
-runNpmLs();
+ensureInstalledTopLevelPackages(packageJson, packageLock);
 
 console.log(
-  `Dependency check passed. Node ${currentNodeVersion} satisfies ${SUPPORTED_NODE_RANGE}, manifests are in sync, and top-level packages are installed.`,
+  `Dependency check passed. Node ${currentNodeVersion} satisfies ${SUPPORTED_NODE_RANGE}, manifests are in sync, and declared top-level packages match package-lock.json.`,
 );
