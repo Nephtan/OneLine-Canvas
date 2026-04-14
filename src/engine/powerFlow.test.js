@@ -19,6 +19,19 @@ function utilityNode(id, options = {}) {
   };
 }
 
+function generatorNode(id, options = {}) {
+  return {
+    id,
+    type: "generator",
+    data: {
+      label: id,
+      isSourceOnline:
+        options.isSourceOnline === undefined ? true : options.isSourceOnline
+    },
+    position: { x: 0, y: 0 }
+  };
+}
+
 function mvsgNode(id) {
   return {
     id,
@@ -41,6 +54,33 @@ function loadNode(id) {
   return {
     id,
     type: "load",
+    data: { label: id },
+    position: { x: 0, y: 0 }
+  };
+}
+
+function switchboardNode(id) {
+  return {
+    id,
+    type: "switchboard",
+    data: { label: id },
+    position: { x: 0, y: 0 }
+  };
+}
+
+function transferSwitchNode(id) {
+  return {
+    id,
+    type: "transferSwitch",
+    data: { label: id },
+    position: { x: 0, y: 0 }
+  };
+}
+
+function mechanicalNode(id) {
+  return {
+    id,
+    type: "mechanical",
     data: { label: id },
     position: { x: 0, y: 0 }
   };
@@ -204,6 +244,70 @@ describe("evaluatePowerFlow", () => {
     expect(edgePowerStateByEdgeId["e2"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
     expect(edgePowerStateByEdgeId["e3"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
   });
+
+  it("treats generator as a root source and energizes downstream nodes", () => {
+    const nodes = [generatorNode("gen-a"), mvsgNode("mvsg-a"), loadNode("load-a")];
+    const edges = [
+      breakerEdge("e1", "gen-a", "mvsg-a", "closed"),
+      breakerEdge("e2", "mvsg-a", "load-a", "closed")
+    ];
+    const { powerStateByNodeId, sourceIdsByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["load-a"]).toEqual(["gen-a"]);
+  });
+
+  it("de-energizes the generator feeder when generator source is offline", () => {
+    const nodes = [generatorNode("gen-a", { isSourceOnline: false }), mvsgNode("mvsg-a")];
+    const edges = [breakerEdge("e1", "gen-a", "mvsg-a", "closed")];
+    const { powerStateByNodeId, edgePowerStateByEdgeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(edgePowerStateByEdgeId["e1"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+  });
+
+  it("propagates generator power through switchboard and transfer switch to mechanical load", () => {
+    const nodes = [
+      generatorNode("gen-a"),
+      switchboardNode("swbd-a"),
+      transferSwitchNode("ats-a"),
+      mechanicalNode("fcw-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "gen-a", "swbd-a", "closed"),
+      breakerEdge("e2", "swbd-a", "ats-a", "closed"),
+      breakerEdge("e3", "ats-a", "fcw-a", "closed")
+    ];
+    const { powerStateByNodeId, sourceIdsByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ats-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["fcw-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["fcw-a"]).toEqual(["gen-a"]);
+  });
+
+  it("flags phase conflict when utility and generator are cross-tied", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      generatorNode("gen-a"),
+      mvsgNode("mvsg-a"),
+      mvsgNode("mvsg-b")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", "closed"),
+      breakerEdge("e2", "gen-a", "mvsg-b", "closed"),
+      breakerEdge("tie", "mvsg-a", "mvsg-b", "closed")
+    ];
+    const { powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+  });
 });
 
 describe("createTopologyKey", () => {
@@ -228,5 +332,15 @@ describe("createTopologyKey", () => {
     const keyB = createTopologyKey(nodesAtPositionB, edges);
 
     expect(keyA).toBe(keyB);
+  });
+
+  it("changes when generator source online flag changes", () => {
+    const nodesOnline = [generatorNode("gen-a", { isSourceOnline: true }), mvsgNode("mvsg-a")];
+    const nodesOffline = [generatorNode("gen-a", { isSourceOnline: false }), mvsgNode("mvsg-a")];
+    const edges = [breakerEdge("e1", "gen-a", "mvsg-a", "closed")];
+    const keyOnline = createTopologyKey(nodesOnline, edges);
+    const keyOffline = createTopologyKey(nodesOffline, edges);
+
+    expect(keyOnline).not.toBe(keyOffline);
   });
 });

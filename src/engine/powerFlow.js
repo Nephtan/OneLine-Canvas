@@ -16,21 +16,25 @@ export const EDGE_POWER_STATE = {
   PHASE_CONFLICT: "phase-conflict"
 };
 
+function isRootSourceType(nodeType) {
+  return nodeType === "utility" || nodeType === "generator";
+}
+
 export function normalizeBreakerState(state) {
   return state === BREAKER_STATE.CLOSED
     ? BREAKER_STATE.CLOSED
     : BREAKER_STATE.OPEN;
 }
 
-function isUtilityOnline(node) {
-  return node.type === "utility" && node.data?.isSourceOnline !== false;
+function isRootSourceOnline(node) {
+  return isRootSourceType(node.type) && node.data?.isSourceOnline !== false;
 }
 
 export function createTopologyKey(nodes, edges) {
   const nodeSignature = nodes
     .map((node) => {
       const utilityOnlineSignature =
-        node.type === "utility" ? (isUtilityOnline(node) ? "1" : "0") : "-";
+        isRootSourceType(node.type) ? (isRootSourceOnline(node) ? "1" : "0") : "-";
       return `${node.id}:${node.type ?? "default"}:${utilityOnlineSignature}`;
     })
     .sort();
@@ -75,14 +79,14 @@ export function evaluatePowerFlow(nodes, edges) {
     adjacencySets.get(edge.target).add(edge.source);
   }
 
-  const onlineUtilitySourceIds = nodes
-    .filter((node) => isUtilityOnline(node))
+  const onlineRootSourceIds = nodes
+    .filter((node) => isRootSourceOnline(node))
     .map((node) => node.id);
 
-  const queue = [...onlineUtilitySourceIds];
-  const queuedSet = new Set(onlineUtilitySourceIds);
+  const queue = [...onlineRootSourceIds];
+  const queuedSet = new Set(onlineRootSourceIds);
 
-  for (const utilitySourceId of onlineUtilitySourceIds) {
+  for (const utilitySourceId of onlineRootSourceIds) {
     sourceSetsByNodeId.get(utilitySourceId).add(utilitySourceId);
   }
 
@@ -141,7 +145,7 @@ export function evaluatePowerFlow(nodes, edges) {
       continue;
     }
 
-    if (node?.type === "utility") {
+    if (isRootSourceType(node?.type)) {
       if (sourceIds.length > 1) {
         powerStateByNodeId[nodeId] = NODE_POWER_STATE.PHASE_CONFLICT;
         continue;

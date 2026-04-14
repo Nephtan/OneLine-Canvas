@@ -40,6 +40,18 @@ function EquipmentPalette({
         <button
           type="button"
           draggable
+          onDragStart={(event) => onDragStart(event, "generator")}
+          className="w-full cursor-grab rounded border border-lime-500/60 bg-slate-800 px-3 py-2 text-left active:cursor-grabbing"
+        >
+          <div className="text-[10px] uppercase tracking-[0.2em] text-lime-300/85">
+            Generator
+          </div>
+          <div className="mt-1 text-xs text-lime-100">480 V standby source</div>
+        </button>
+
+        <button
+          type="button"
+          draggable
           onDragStart={(event) => onDragStart(event, "utility")}
           className="w-full cursor-grab rounded border border-emerald-500/60 bg-slate-800 px-3 py-2 text-left active:cursor-grabbing"
         >
@@ -47,6 +59,30 @@ function EquipmentPalette({
             Utility Feed
           </div>
           <div className="mt-1 text-xs text-emerald-100">12.47 kV source</div>
+        </button>
+
+        <button
+          type="button"
+          draggable
+          onDragStart={(event) => onDragStart(event, "switchboard")}
+          className="w-full cursor-grab rounded border border-slate-500/70 bg-slate-800 px-3 py-2 text-left active:cursor-grabbing"
+        >
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-200">
+            Switchboard
+          </div>
+          <div className="mt-1 text-xs text-slate-100">MDB / UPS distribution</div>
+        </button>
+
+        <button
+          type="button"
+          draggable
+          onDragStart={(event) => onDragStart(event, "transferSwitch")}
+          className="w-full cursor-grab rounded border border-indigo-500/60 bg-slate-800 px-3 py-2 text-left active:cursor-grabbing"
+        >
+          <div className="text-[10px] uppercase tracking-[0.2em] text-indigo-300/85">
+            Transfer Switch
+          </div>
+          <div className="mt-1 text-xs text-indigo-100">ATS / STS</div>
         </button>
 
         <button
@@ -71,6 +107,18 @@ function EquipmentPalette({
             PTX
           </div>
           <div className="mt-1 text-xs text-violet-100">Pad-mount transformer</div>
+        </button>
+
+        <button
+          type="button"
+          draggable
+          onDragStart={(event) => onDragStart(event, "mechanical")}
+          className="w-full cursor-grab rounded border border-cyan-500/70 bg-slate-800 px-3 py-2 text-left active:cursor-grabbing"
+        >
+          <div className="text-[10px] uppercase tracking-[0.2em] text-cyan-300/85">
+            Mechanical
+          </div>
+          <div className="mt-1 text-xs text-cyan-100">CRAH / Fan Coil Wall</div>
         </button>
 
         <button

@@ -1,36 +1,58 @@
-# OneLine-Canvas Handoff (Phase 6: Persistence and State Sharing)
+# OneLine-Canvas Handoff (Phase 7: 480V & Mechanical Expansion)
 
 ## 1. Completed Architectural Changes
-- Added persistent graph storage in `App.jsx` using localStorage key `oneline-canvas-state`.
-- Implemented safe hydration path on app load:
-  - parses stored JSON once during initialization,
-  - validates persisted shape as `{ nodes: [], edges: [] }`,
-  - falls back to blank canvas on missing/invalid payload.
-- Added autosave lifecycle in `App.jsx`:
-  - `useEffect` watches canonical `nodes` and `edges`,
-  - serializes and writes only canonical graph state to localStorage.
-- Added file export/import/clear topology controls to `EquipmentPalette.jsx`:
-  - `Save to File` downloads `topology.json`,
-  - `Load from File` opens JSON picker and imports graph,
-  - `Clear Yard` performs destructive reset with explicit red warning styling.
-- Added import/export/clear handlers in `App.jsx`:
-  - export uses `Blob` + object URL download flow,
-  - import parses JSON and **overwrites** current `nodes`/`edges`,
-  - invalid import aborts safely with `console.error` + `alert`,
-  - clear wipes localStorage key and resets graph to zero nodes/edges.
-- Added localStorage clear guard to prevent immediate rewrite after destructive clear so key removal is preserved.
-- Preserved all existing sandbox behaviors:
-  - drag/drop equipment spawn, breaker toggle, and deletion interactions remain intact.
+- Added new root-capable source node:
+  - `GeneratorNode` (`src/nodes/GeneratorNode.jsx`) with distinct diesel/engine visual identity.
+  - Includes interactive `Kill Feed` / `Restore Feed` control using `data.isSourceOnline`.
+  - Implements the same source-state semantics and visual precedence model as utility (`Live`, `Dead`, `Backfeed`, `Phase Conflict`).
+- Expanded physics engine root-source qualification in `src/engine/powerFlow.js`:
+  - root source types are now `utility` **and** `generator`.
+  - root source online gating uses `data.isSourceOnline !== false` for both types.
+  - topology key source-online signature now accounts for both root source types.
+  - traversal/set-union math and edge-state logic were otherwise preserved.
+- Added Big Bus distribution nodes:
+  - `SwitchboardNode` (`src/nodes/SwitchboardNode.jsx`)
+  - `TransferSwitchNode` (`src/nodes/TransferSwitchNode.jsx`)
+  - Both implement Big Bus handle geometry:
+    - single continuous top `target` bus handle,
+    - single continuous bottom `source` bus handle,
+    - `isConnectable={true}` for unlimited edge snaps.
+- Added mechanical terminal sink:
+  - `MechanicalNode` (`src/nodes/MechanicalNode.jsx`) with fan/mechanical styling.
+  - Terminal behavior enforced by handle geometry (`target` only, no `source`).
+- Updated `App.jsx` node registry and spawn factory:
+  - registered new node types: `generator`, `switchboard`, `transferSwitch`, `mechanical`.
+  - expanded drag/drop whitelist and default node data payloads for all new types.
+  - generalized root source toggle callback injection for both utility and generator node types.
+- Updated equipment palette (`src/components/EquipmentPalette.jsx`) with draggable entries for:
+  - Generator, Switchboard, Transfer Switch, Mechanical.
+- Preserved persistence/export/import format and flow:
+  - no schema change to persisted graph (`{ nodes, edges }`);
+  - all new node types serialize and hydrate natively through existing localStorage and JSON file paths.
+- Expanded engine unit tests (`src/engine/powerFlow.test.js`):
+  - generator root propagation,
+  - generator-offline de-energization,
+  - utility+generator tie conflict,
+  - generator topology-key invalidation,
+  - generator -> switchboard -> transfer switch -> mechanical downstream propagation.
 
 ## 2. Current State of the Dynamic Graph Engine
-- Physics engine math (`usePowerFlow` and traversal logic) is unchanged and still source-aware/catastrophic-state capable.
-- Engine remains fully driven by canonical React Flow `nodes`/`edges`.
-- Hydrated/imported graphs automatically feed into existing engine calculations on next render cycle without special handling.
-- Utility online/offline toggles still trigger topology-key recomputation via existing engine key logic.
+- Engine remains source-aware and topology-agnostic with dynamic adjacency from current React Flow `nodes`/`edges`.
+- Root source set now includes:
+  - `utility`
+  - `generator`
+- State outputs remain:
+  - node: `Dead`, `Live`, `Backfeed`, `Phase Conflict`
+  - edge: `de-energized`, `energized`, `phase-conflict`
+- Topology recomputation is still memoized and deterministic:
+  - position-only drags do not invalidate topology key;
+  - online/offline source toggles for utility and generator do invalidate topology key.
+- Big Bus philosophy is implemented in UI geometry only:
+  - no bespoke port-mapping or direction-routing logic beyond single bus handles.
 
 ## 3. Known Bugs / Unhandled Edge Cases
-- Imported files are validated only for top-level shape (`nodes` and `edges` arrays); no schema versioning or deep field validation yet.
-- No multi-slot save history exists (single browser cache key + manual JSON file workflow only).
-- `Clear Yard` is destructive and immediate; no confirmation dialog or undo stack is implemented yet.
-- Sandbox state remains local-only (no remote sync, collaboration, or conflict resolution between browser sessions).
-- Protection behavior and electrical fidelity limits from prior phases still apply (visual fault model; no relay trip/coordination engine).
+- Big Bus handles permit intentionally invalid/operator-error topologies by design; no electrical interlock constraints are applied.
+- Mechanical/load terminal semantics are UI-enforced via handle geometry only; no additional electrical-direction validation is implemented.
+- Imported topology validation remains shallow (top-level arrays only); deep schema/type validation for unknown node payloads is not implemented.
+- Persistence remains local-only (no remote sync, version history, or multi-user merge resolution).
+- Protection behavior remains visual-only (no breaker auto-trip, relay coordination, selective isolation, or fault-clearing timing simulation).

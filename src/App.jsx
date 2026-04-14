@@ -10,9 +10,13 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import UtilityNode from "./nodes/UtilityNode";
+import GeneratorNode from "./nodes/GeneratorNode";
 import MVSGNode from "./nodes/MVSGNode";
 import PTXNode from "./nodes/PTXNode";
 import LoadNode from "./nodes/LoadNode";
+import SwitchboardNode from "./nodes/SwitchboardNode";
+import TransferSwitchNode from "./nodes/TransferSwitchNode";
+import MechanicalNode from "./nodes/MechanicalNode";
 import BreakerEdge from "./edges/BreakerEdge";
 import usePowerFlow from "./hooks/usePowerFlow";
 import { BREAKER_STATE, EDGE_POWER_STATE } from "./engine/powerFlow";
@@ -20,9 +24,13 @@ import EquipmentPalette, { DRAG_MIME_TYPE } from "./components/EquipmentPalette"
 
 const nodeTypes = {
   utility: UtilityNode,
+  generator: GeneratorNode,
   mvsg: MVSGNode,
   ptx: PTXNode,
-  load: LoadNode
+  load: LoadNode,
+  switchboard: SwitchboardNode,
+  transferSwitch: TransferSwitchNode,
+  mechanical: MechanicalNode
 };
 
 const edgeTypes = {
@@ -106,11 +114,14 @@ function App() {
     }
   }, [nodes, edges]);
 
-  const toggleUtilitySourceOnline = useCallback(
+  const toggleRootSourceOnline = useCallback(
     (nodeId) => {
       setNodes((currentNodes) =>
         currentNodes.map((node) => {
-          if (node.id !== nodeId || node.type !== "utility") {
+          const isRootSourceType =
+            node.type === "utility" || node.type === "generator";
+
+          if (node.id !== nodeId || !isRootSourceType) {
             return node;
           }
 
@@ -138,12 +149,12 @@ function App() {
           powerState: powerStateByNodeId[node.id] ?? "Dead",
           sourceIds: sourceIdsByNodeId[node.id] ?? [],
           onToggleSourceOnline:
-            node.type === "utility"
-              ? () => toggleUtilitySourceOnline(node.id)
+            node.type === "utility" || node.type === "generator"
+              ? () => toggleRootSourceOnline(node.id)
               : undefined
         }
       })),
-    [nodes, powerStateByNodeId, sourceIdsByNodeId, toggleUtilitySourceOnline]
+    [nodes, powerStateByNodeId, sourceIdsByNodeId, toggleRootSourceOnline]
   );
 
   const renderEdges = useMemo(
@@ -254,9 +265,13 @@ function App() {
       if (
         !reactFlowInstance ||
         (nodeType !== "utility" &&
+          nodeType !== "generator" &&
           nodeType !== "mvsg" &&
           nodeType !== "ptx" &&
-          nodeType !== "load")
+          nodeType !== "load" &&
+          nodeType !== "switchboard" &&
+          nodeType !== "transferSwitch" &&
+          nodeType !== "mechanical")
       ) {
         return;
       }
@@ -268,27 +283,60 @@ function App() {
       const nodeUuid = crypto.randomUUID();
       const nodeId = `${nodeType}-${nodeUuid}`;
       const nodeLabelSuffix = nodeUuid.slice(0, 4).toUpperCase();
-      const nodeData =
-        nodeType === "utility"
-          ? {
-              label: `Utility ${nodeLabelSuffix}`,
-              voltage: "12.47 kV",
-              isSourceOnline: true
-            }
-          : nodeType === "ptx"
-            ? {
-                label: `PTX ${nodeLabelSuffix}`,
-                ratio: "12.47 kV / 480 V"
-              }
-            : nodeType === "load"
-              ? {
-                  label: `Load ${nodeLabelSuffix}`,
-                  loadClass: "Data Hall"
-                }
-          : {
-              label: `MVSG ${nodeLabelSuffix}`,
-              nominalVoltage: "12.47 kV Bus"
-            };
+      let nodeData;
+
+      switch (nodeType) {
+        case "utility":
+          nodeData = {
+            label: `Utility ${nodeLabelSuffix}`,
+            voltage: "12.47 kV",
+            isSourceOnline: true
+          };
+          break;
+        case "generator":
+          nodeData = {
+            label: `Generator ${nodeLabelSuffix}`,
+            voltage: "480 V Generator",
+            isSourceOnline: true
+          };
+          break;
+        case "switchboard":
+          nodeData = {
+            label: `SWBD ${nodeLabelSuffix}`,
+            boardClass: "Main Distribution Board"
+          };
+          break;
+        case "transferSwitch":
+          nodeData = {
+            label: `ATS ${nodeLabelSuffix}`,
+            switchClass: "Automatic Transfer Switch"
+          };
+          break;
+        case "mechanical":
+          nodeData = {
+            label: `FCW ${nodeLabelSuffix}`,
+            mechanicalClass: "Fan Coil Wall"
+          };
+          break;
+        case "ptx":
+          nodeData = {
+            label: `PTX ${nodeLabelSuffix}`,
+            ratio: "12.47 kV / 480 V"
+          };
+          break;
+        case "load":
+          nodeData = {
+            label: `Load ${nodeLabelSuffix}`,
+            loadClass: "Data Hall"
+          };
+          break;
+        default:
+          nodeData = {
+            label: `MVSG ${nodeLabelSuffix}`,
+            nominalVoltage: "12.47 kV Bus"
+          };
+          break;
+      }
 
       setNodes((currentNodes) =>
         currentNodes.concat({
@@ -419,7 +467,7 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 6 Persistence & State Sharing
+            OneLine-Canvas Phase 7 480V & Mechanical Expansion
           </div>
         </div>
       </div>
