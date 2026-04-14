@@ -21,6 +21,62 @@ Bastard-proof your MOPs before you ever step foot on the yard.
 
 ---
 
+## Setup
+
+OneLine-Canvas uses `npm`, with `package.json` and `package-lock.json` as the canonical install source.
+
+### Prerequisites
+
+Install a compatible Node.js release before doing anything else:
+
+* Node `20.19+`
+* Node `22.12+`
+
+After installation, open a fresh terminal in `C:\JeremyDev\OneLine-Canvas` and verify both commands resolve:
+
+```bash
+node --version
+npm --version
+```
+
+If Windows says `'node' is not recognized` or `'npm' is not recognized`, reopen the terminal and confirm the Node installer added Node to your `PATH`.
+
+### Install Dependencies
+
+Use the lockfile-backed install so the workspace matches the checked-in toolchain exactly:
+
+```bash
+npm ci
+```
+
+### Validate The Workspace
+
+Run the dependency self-check any time you need to confirm the local environment is healthy:
+
+```bash
+npm run check:deps
+```
+
+The check verifies:
+
+* your Node version satisfies the repo policy
+* `node_modules` exists
+* `package.json` and `package-lock.json` are in sync
+* `DEPENDENCIES.md` matches the declared manifests
+* top-level npm packages are installed without missing, invalid, or extraneous entries
+
+If the dependency check reports missing install state or manifest drift, rerun `npm ci`.
+
+### Normal Next Steps
+
+```bash
+npm run dev
+npm test
+npm run build
+```
+
+---
+
 ## Contributing
 
 If you want to add new component types, refine the simulation loop, or build a better UI for tagging components, pull requests are welcome. Make sure your logic is sound. We do not accept code that breaks fundamental laws of thermodynamics, introduces phantom loads, or assumes a perfect physical world.

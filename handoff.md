@@ -14,6 +14,7 @@
 | Phase 9 | `WORKTREE (uncommitted)` | `2026-04-13` | `Implement protective isolation auto-trip breakers` | Completed in workspace |
 | Phase 10 | `WORKTREE (uncommitted)` | `2026-04-14` | `Implement equipment identity and synchronized source paralleling` | Completed in workspace |
 | Maintenance | `WORKTREE (uncommitted)` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Completed in workspace |
+| Maintenance | `WORKTREE (uncommitted)` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Completed in workspace |
 
 ## Timeline of Architectural Evolution
 
@@ -196,6 +197,20 @@
 - Unresolved items at phase end:
   - Dependency inventory is documentation only; `package.json` and `package-lock.json` remain the canonical install sources.
 
+### Maintenance Update: Dependency Self-Validation
+- Revision: `WORKTREE (uncommitted)`
+- Date: `2026-04-14`
+- Subject: `Add dependency self-validation tooling and setup guidance`
+- Major additions:
+  - Added a repo-local `npm run check:deps` command backed by `scripts/check-deps.mjs`.
+  - Enforced a documented Node policy of `^20.19.0 || >=22.12.0` in `package.json`.
+  - Added README setup instructions for Node verification, `npm ci`, dependency validation, and Windows PATH troubleshooting.
+  - Updated `DEPENDENCIES.md` to prefer `npm ci` and documented that the inventory is now checked against the manifests.
+- Engine-state evolution:
+  - No graph traversal, protection, synchronization, or React Flow behavior changed.
+- Unresolved items at phase end:
+  - Automated execution of the new dependency checker is still blocked in this shell until Node/npm are installed and available on PATH.
+
 ## Cumulative System State (Latest)
 
 ### Completed Architectural Changes
@@ -203,6 +218,7 @@
   - Vite + React 18 + Tailwind + `@xyflow/react` with `vite-plugin-singlefile` monolithic output strategy.
 - Documentation and repo metadata:
   - Added `DEPENDENCIES.md` as a quick dependency inventory derived from the existing npm manifest and lockfile.
+  - Added Windows-first setup guidance to `README.md` plus a repo-local dependency validation command.
 - Dynamic canvas and equipment workflow:
   - Blank-canvas sandbox with drag-drop equipment palette, user-created edges, and deletion support.
 - Source-aware dynamic power engine:
@@ -227,6 +243,9 @@
   - Every node now carries a canonical `data.label`.
   - `utility` and `generator` nodes also carry raw `data.syncGroup` strings that persist through localStorage and JSON import/export.
   - All node labels are renameable in-place via double-click without mutating topology geometry.
+- Tooling guardrails:
+  - `package.json` now declares a Node engine policy of `^20.19.0 || >=22.12.0`.
+  - `scripts/check-deps.mjs` validates Node version, manifest/lockfile parity, `DEPENDENCIES.md` parity, `node_modules` presence, and top-level npm install health.
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
@@ -264,6 +283,7 @@
 - Persistence is local-browser scoped only; no remote sync, revision history, or multi-user merge workflow exists.
 - `Clear Yard` remains destructive with no confirmation/undo stack.
 - Source controls are node-local; no bulk dispatch/SCADA orchestration layer exists.
+- Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 
 ## Engine Verification and Test Coverage Snapshot
 
@@ -286,3 +306,4 @@
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
 - Automated test execution is currently blocked in this shell because `node`/`npm` are not available on PATH or in standard local install locations.
+- Dependency self-validation exists, but it cannot be exercised in this shell until Node/npm are installed.

@@ -25,5 +25,7 @@ OneLine-Canvas uses `npm` for package management. The canonical install manifest
 ## Install
 
 ```bash
-npm install
+npm ci
 ```
+
+Run `npm run check:deps` after installation to verify the local environment is healthy and confirm this inventory still matches `package.json` and `package-lock.json`.
