@@ -88,7 +88,12 @@ function App() {
   const reactFlowInstanceRef = useRef(null);
   const importInputRef = useRef(null);
   const skipNextAutosaveRef = useRef(false);
-  const { powerStateByNodeId, sourceIdsByNodeId, edgePowerStateByEdgeId } =
+  const {
+    powerStateByNodeId,
+    sourceIdsByNodeId,
+    edgePowerStateByEdgeId,
+    faultedEdgeIds
+  } =
     usePowerFlow(nodes, edges);
 
   useEffect(() => {
@@ -113,6 +118,40 @@ function App() {
       console.error("Failed to persist topology to localStorage.", error);
     }
   }, [nodes, edges]);
+
+  useEffect(() => {
+    if (!faultedEdgeIds || faultedEdgeIds.length === 0) {
+      return;
+    }
+
+    const faultedEdgeIdSet = new Set(faultedEdgeIds);
+
+    setEdges((currentEdges) => {
+      let didTripAnyEdge = false;
+
+      const nextEdges = currentEdges.map((edge) => {
+        if (!faultedEdgeIdSet.has(edge.id)) {
+          return edge;
+        }
+
+        if (edge.data?.breakerState !== BREAKER_STATE.CLOSED) {
+          return edge;
+        }
+
+        didTripAnyEdge = true;
+
+        return {
+          ...edge,
+          data: {
+            ...edge.data,
+            breakerState: BREAKER_STATE.TRIPPED
+          }
+        };
+      });
+
+      return didTripAnyEdge ? nextEdges : currentEdges;
+    });
+  }, [faultedEdgeIds, setEdges]);
 
   const toggleRootSourceOnline = useCallback(
     (nodeId) => {
@@ -366,9 +405,11 @@ function App() {
           }
 
           const nextState =
-            currentEdge.data?.breakerState === BREAKER_STATE.CLOSED
+            currentEdge.data?.breakerState === BREAKER_STATE.TRIPPED
               ? BREAKER_STATE.OPEN
-              : BREAKER_STATE.CLOSED;
+              : currentEdge.data?.breakerState === BREAKER_STATE.CLOSED
+                ? BREAKER_STATE.OPEN
+                : BREAKER_STATE.CLOSED;
 
           return {
             ...currentEdge,
@@ -467,7 +508,7 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 7 480V & Mechanical Expansion
+            OneLine-Canvas Phase 9 Protective Isolation
           </div>
         </div>
       </div>

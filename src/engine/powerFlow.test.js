@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BREAKER_STATE,
   EDGE_POWER_STATE,
   NODE_POWER_STATE,
   createTopologyKey,
@@ -187,6 +188,69 @@ describe("evaluatePowerFlow", () => {
     expect(edgePowerStateByEdgeId["e2"]).toBe(EDGE_POWER_STATE.PHASE_CONFLICT);
     expect(edgePowerStateByEdgeId["tie"]).toBe(EDGE_POWER_STATE.PHASE_CONFLICT);
     expect(edgePowerStateByEdgeId["open-branch"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+  });
+
+  it("treats tripped breakers as non-conductive and de-energized", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a")];
+    const edges = [breakerEdge("trip-edge", "utility-a", "mvsg-a", BREAKER_STATE.TRIPPED)];
+    const { powerStateByNodeId, edgePowerStateByEdgeId, faultedEdgeIds } =
+      evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(edgePowerStateByEdgeId["trip-edge"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+    expect(faultedEdgeIds).toEqual([]);
+  });
+
+  it("emits faulted edge ids for all closed breakers touching conflict nodes", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      utilityNode("utility-b"),
+      mvsgNode("mvsg-a"),
+      mvsgNode("mvsg-b")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "utility-b", "mvsg-b", BREAKER_STATE.CLOSED),
+      breakerEdge("tie", "mvsg-a", "mvsg-b", BREAKER_STATE.CLOSED)
+    ];
+    const { faultedEdgeIds, powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(faultedEdgeIds).toEqual(["e1", "e2", "tie"]);
+  });
+
+  it("never emits open or tripped breakers in faulted edge ids", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      utilityNode("utility-b"),
+      mvsgNode("mvsg-a"),
+      mvsgNode("mvsg-b")
+    ];
+    const edges = [
+      breakerEdge("closed-a", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("closed-b", "utility-b", "mvsg-b", BREAKER_STATE.CLOSED),
+      breakerEdge("open-tie", "mvsg-a", "mvsg-b", BREAKER_STATE.OPEN),
+      breakerEdge("tripped-tie", "mvsg-a", "mvsg-b", BREAKER_STATE.TRIPPED)
+    ];
+    const { powerStateByNodeId, faultedEdgeIds } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(faultedEdgeIds).toEqual([]);
+  });
+
+  it("emits no faulted edge ids on single-source energized paths", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a"), loadNode("load-a")];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "mvsg-a", "load-a", BREAKER_STATE.CLOSED)
+    ];
+    const { faultedEdgeIds, powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(faultedEdgeIds).toEqual([]);
   });
 
   it("keeps isolated open edges de-energized and healthy feeders energized", () => {

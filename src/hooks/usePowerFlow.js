@@ -9,6 +9,7 @@ function usePowerFlow(nodes, edges) {
       powerStateByNodeId: {},
       sourceIdsByNodeId: {},
       edgePowerStateByEdgeId: {},
+      faultedEdgeIds: [],
       adjacencyByNodeId: {}
     }
   });

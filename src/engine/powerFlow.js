@@ -1,6 +1,7 @@
 export const BREAKER_STATE = {
   OPEN: "open",
-  CLOSED: "closed"
+  CLOSED: "closed",
+  TRIPPED: "tripped"
 };
 
 export const NODE_POWER_STATE = {
@@ -21,9 +22,15 @@ function isRootSourceType(nodeType) {
 }
 
 export function normalizeBreakerState(state) {
-  return state === BREAKER_STATE.CLOSED
-    ? BREAKER_STATE.CLOSED
-    : BREAKER_STATE.OPEN;
+  if (state === BREAKER_STATE.CLOSED) {
+    return BREAKER_STATE.CLOSED;
+  }
+
+  if (state === BREAKER_STATE.TRIPPED) {
+    return BREAKER_STATE.TRIPPED;
+  }
+
+  return BREAKER_STATE.OPEN;
 }
 
 function isRootSourceOnline(node) {
@@ -164,6 +171,12 @@ export function evaluatePowerFlow(nodes, edges) {
         : NODE_POWER_STATE.LIVE;
   }
 
+  const conflictNodeIdSet = new Set(
+    nodeIds.filter(
+      (nodeId) => powerStateByNodeId[nodeId] === NODE_POWER_STATE.PHASE_CONFLICT
+    )
+  );
+
   const adjacencyByNodeId = {};
 
   for (const [nodeId, neighborSet] of adjacencySets.entries()) {
@@ -171,6 +184,7 @@ export function evaluatePowerFlow(nodes, edges) {
   }
 
   const edgePowerStateByEdgeId = {};
+  const faultedEdgeIdSet = new Set();
 
   for (const edge of edges) {
     const breakerState = normalizeBreakerState(edge.data?.breakerState);
@@ -178,6 +192,10 @@ export function evaluatePowerFlow(nodes, edges) {
     if (breakerState !== BREAKER_STATE.CLOSED) {
       edgePowerStateByEdgeId[edge.id] = EDGE_POWER_STATE.DE_ENERGIZED;
       continue;
+    }
+
+    if (conflictNodeIdSet.has(edge.source) || conflictNodeIdSet.has(edge.target)) {
+      faultedEdgeIdSet.add(edge.id);
     }
 
     const sourceIdsAtSource = sourceSetsByNodeId.get(edge.source);
@@ -208,6 +226,7 @@ export function evaluatePowerFlow(nodes, edges) {
     powerStateByNodeId,
     sourceIdsByNodeId,
     adjacencyByNodeId,
-    edgePowerStateByEdgeId
+    edgePowerStateByEdgeId,
+    faultedEdgeIds: Array.from(faultedEdgeIdSet).sort()
   };
 }

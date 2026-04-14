@@ -1,4 +1,4 @@
-# OneLine-Canvas Master Handoff (Phases 1-8)
+# OneLine-Canvas Master Handoff (Phases 1-9)
 
 ## Source Map (Historical Inputs)
 | Phase | Revision | Date | Commit Subject | Status |
@@ -11,6 +11,7 @@
 | Phase 6 | `0e460484c7c1298af44a4adb4b90fca1e124183f` | `2026-04-13` | `Build single-file bundle for persistence and import controls` | Committed |
 | Phase 7 | `af45a63826a360598164015d84be0d2f9eb1b64e` | `2026-04-13` | `Expand yard with generator big-bus and mechanical node support` | Committed |
 | Phase 8 | `1d3482f4edfba70ec4d0a10ce7fde857efcd4991` | `2026-04-13` | `Big Bus geometry update for all gear` | Committed |
+| Phase 9 | `WORKTREE (uncommitted)` | `2026-04-13` | `Implement protective isolation auto-trip breakers` | Completed in workspace |
 
 ## Timeline of Architectural Evolution
 
@@ -147,6 +148,23 @@
   - Big Bus and terminal constraints remain interaction-level, not protection-level.
   - Existing persistence/import/protection limitations remain.
 
+### Phase 9: Protective Isolation
+- Revision: `WORKTREE (uncommitted)`
+- Date: `2026-04-13`
+- Subject: `Implement protective isolation auto-trip breakers`
+- Major additions:
+  - Expanded breaker model from binary states to `open | closed | tripped`.
+  - Added tripped breaker edge visuals and mechanical reset interaction cycle (`tripped -> open -> closed`).
+  - Extended power engine output with `faultedEdgeIds` to identify closed breakers touching conflict nodes.
+  - Added App-level protection effect that force-trips emitted faulted breakers without mutating node state directly.
+  - Added unit coverage for tripped conductivity and faulted-edge emission behavior.
+- Engine-state evolution:
+  - Traversal remains topology-driven and memoized; `tripped` is now treated as non-conductive.
+  - Conflict detection now drives immediate breaker isolation feedback into canonical edge state.
+- Unresolved items at phase end:
+  - Protective isolation is intentionally aggressive and trips all closed breakers adjacent to conflict nodes.
+  - No relay timing/selective coordination hierarchy is modeled yet.
+
 ## Cumulative System State (Latest)
 
 ### Completed Architectural Changes
@@ -156,7 +174,8 @@
   - Blank-canvas sandbox with drag-drop equipment palette, user-created edges, and deletion support.
 - Source-aware dynamic power engine:
   - Topology extracted from live React Flow `nodes`/`edges`.
-  - Closed breakers (`edge.data.breakerState === "closed"`) are conductive and bi-directional.
+  - Only closed breakers (`edge.data.breakerState === "closed"`) are conductive and bi-directional.
+  - Open and tripped breakers are non-conductive.
   - Root sources are `utility` and `generator` where `data.isSourceOnline !== false`.
 - Normalized state model:
   - Node states: `Dead`, `Live`, `Backfeed`, `Phase Conflict`.
@@ -167,6 +186,10 @@
   - Local autosave/hydration plus JSON export/import for `{ nodes, edges }`.
 - Big Bus interaction standard:
   - Multi-connection ergonomics standardized to continuous bus handles; permissive wiring is intentional.
+- Protective isolation:
+  - Engine emits `faultedEdgeIds` for closed breakers adjacent to `Phase Conflict` nodes.
+  - App auto-trips those edges to `breakerState: "tripped"` and forces a recalculation cascade.
+  - Breaker interaction enforces mechanical reset (`tripped -> open -> closed`).
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
@@ -174,21 +197,26 @@
 - Conflict and backfeed:
   - Multi-source overlap resolves to `Phase Conflict`.
   - Root fed by a non-self source resolves to `Backfeed`.
+- Protection feedback:
+  - Conflict evaluation emits a deterministic fault-hit list of closed breakers connected to conflicted nodes.
+  - The hit list is consumed by `App.jsx` to trip breakers and clear active faults in the next recompute.
 - Recompute and memoization:
   - Topology key includes node identity/type plus root-source online signatures.
-  - Topology key includes edge source/target and breaker state.
+  - Topology key includes edge source/target and breaker state (`open`, `closed`, `tripped`).
   - Position-only drags do not invalidate traversal cache.
 
 ### Locked Behavioral Contracts for Implementers
 - Topology source of truth is always live React Flow `nodes`/`edges`; no hardcoded adjacency is permitted.
 - Breaker conductivity is controlled only by `edge.data.breakerState`.
+- Valid breaker states are `open`, `closed`, and `tripped`; only `closed` is conductive.
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
 - Persistence contract remains `{ nodes, edges }` with shallow import validation.
-- This master handoff introduces no runtime API/type changes; it is documentation-only.
+- `usePowerFlow` now returns `faultedEdgeIds` in addition to node/edge power maps.
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
 - Multi-source overlap is treated as immediate `Phase Conflict`; no phase-angle/synchronization compatibility model exists.
-- No protective action engine exists (no auto-trip, relay coordination, selective isolation, or fault-clearing timing).
+- Protective isolation is coarse-grained: all closed breakers adjacent to conflict nodes trip in the same cycle.
+- No relay timing/coordination hierarchy exists (instantaneous trip, no selective delay curves, no lockout sequencing).
 - Big Bus geometry intentionally allows operator-error topologies; no interlock/sequencing logic is enforced.
 - Terminal sinks (`load`, `mechanical`) rely on handle geometry; deeper directionality/protection validation is not implemented.
 - Advanced electrical semantics remain unmodeled (for example transformer vector groups and detailed transfer/protection schemes).
@@ -203,12 +231,15 @@
 - Continuity and topology-key behavior for open/closed breaker paths.
 - Source aggregation with explicit assertions for `Backfeed` and `Phase Conflict`.
 - Edge power-state mapping (`de-energized`, `energized`, `phase-conflict`).
+- Trip-aware breaker behavior (`tripped` treated as non-conductive/de-energized).
+- Fault-hitlist emission (`faultedEdgeIds`) for conflict corridors and non-conflict empty-set checks.
 - PTX/load downstream propagation and utility-offline blackout behavior.
 - Generator root propagation, generator-offline behavior, utility+generator tie conflict, and generator topology-key invalidation.
 - End-to-end chain propagation through `generator -> switchboard -> transferSwitch -> mechanical`.
 
 ### Current Validation Gaps
 - No engine model/tests for synchronization compatibility, phase-angle drift, or source-matching windows.
-- No test-backed protection lifecycle (trip logic, relay timing, lockout, and selective coordination).
+- No selective relay coordination model (zone-selective interlocking, staged tripping, breaker priorities).
+- No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.

@@ -30,6 +30,13 @@ const CONFLICT_EDGE_STYLE = {
   filter: "drop-shadow(0 0 10px rgba(239, 68, 68, 0.92))"
 };
 
+const TRIPPED_EDGE_STYLE = {
+  stroke: "#ef4444",
+  strokeWidth: 3,
+  strokeDasharray: "4 6",
+  filter: "drop-shadow(0 0 8px rgba(239, 68, 68, 0.88))"
+};
+
 function BreakerEdge({
   id,
   sourceX,
@@ -43,6 +50,7 @@ function BreakerEdge({
   const breakerState = normalizeBreakerState(data?.breakerState);
   const edgePowerState = data?.powerState ?? EDGE_POWER_STATE.DE_ENERGIZED;
   const isClosed = breakerState === BREAKER_STATE.CLOSED;
+  const isTripped = breakerState === BREAKER_STATE.TRIPPED;
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
@@ -51,7 +59,9 @@ function BreakerEdge({
     targetY,
     targetPosition
   });
-  const edgeStyle = !isClosed
+  const edgeStyle = isTripped
+    ? TRIPPED_EDGE_STYLE
+    : !isClosed
     ? OPEN_EDGE_STYLE
     : edgePowerState === EDGE_POWER_STATE.PHASE_CONFLICT
       ? CONFLICT_EDGE_STYLE
@@ -59,7 +69,9 @@ function BreakerEdge({
         ? CLOSED_ENERGIZED_EDGE_STYLE
         : CLOSED_DE_ENERGIZED_EDGE_STYLE;
 
-  const edgeLabel = !isClosed
+  const edgeLabel = isTripped
+    ? "TRP"
+    : !isClosed
     ? "Open"
     : edgePowerState === EDGE_POWER_STATE.PHASE_CONFLICT
       ? "Conflict"
@@ -67,7 +79,9 @@ function BreakerEdge({
         ? "Closed Live"
         : "Closed";
 
-  const labelClassName = !isClosed
+  const labelClassName = isTripped
+    ? "border-red-400 bg-red-950/80 text-red-100"
+    : !isClosed
     ? "border-slate-500 bg-slate-900/90 text-slate-300"
     : edgePowerState === EDGE_POWER_STATE.PHASE_CONFLICT
       ? "border-red-400 bg-red-900/70 text-red-100"
