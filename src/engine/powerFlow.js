@@ -1,3 +1,11 @@
+import {
+  TRANSFER_SWITCH_HANDLE_ID,
+  getTransferSwitchHandleRole,
+  isTransferSwitchNodeType,
+  normalizeTransferSwitchActiveSource,
+  normalizeTransferSwitchTargetHandle
+} from "../topology/transferSwitch";
+
 export const BREAKER_STATE = {
   OPEN: "open",
   CLOSED: "closed",
@@ -19,6 +27,60 @@ export const EDGE_POWER_STATE = {
 
 function isRootSourceType(nodeType) {
   return nodeType === "utility" || nodeType === "generator";
+}
+
+function getTransferSwitchHandleIdForEdge(edge, nodeId) {
+  if (edge.target === nodeId) {
+    return normalizeTransferSwitchTargetHandle(edge.targetHandle);
+  }
+
+  return typeof edge.sourceHandle === "string" && edge.sourceHandle.trim() !== ""
+    ? edge.sourceHandle
+    : TRANSFER_SWITCH_HANDLE_ID.OUTPUT;
+}
+
+function transferSwitchConductsHandle(node, handleId) {
+  const handleRole = getTransferSwitchHandleRole(handleId);
+
+  if (
+    handleRole === null ||
+    handleRole === "output"
+  ) {
+    return true;
+  }
+
+  return normalizeTransferSwitchActiveSource(node.data?.activeSource) === handleRole;
+}
+
+function edgeConductsForTransferSwitches(edge, nodeById) {
+  const sourceNode = nodeById.get(edge.source);
+  const targetNode = nodeById.get(edge.target);
+
+  if (!sourceNode || !targetNode) {
+    return false;
+  }
+
+  if (
+    isTransferSwitchNodeType(sourceNode.type) &&
+    !transferSwitchConductsHandle(
+      sourceNode,
+      getTransferSwitchHandleIdForEdge(edge, sourceNode.id)
+    )
+  ) {
+    return false;
+  }
+
+  if (
+    isTransferSwitchNodeType(targetNode.type) &&
+    !transferSwitchConductsHandle(
+      targetNode,
+      getTransferSwitchHandleIdForEdge(edge, targetNode.id)
+    )
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export function normalizeSyncGroup(syncGroup) {
@@ -85,14 +147,25 @@ export function createTopologyKey(nodes, edges) {
       const syncGroupSignature = isRootSourceType(node.type)
         ? normalizeSyncGroup(node.data?.syncGroup)
         : "-";
-      return `${node.id}:${node.type ?? "default"}:${utilityOnlineSignature}:${syncGroupSignature}`;
+      const activeSourceSignature = isTransferSwitchNodeType(node.type)
+        ? normalizeTransferSwitchActiveSource(node.data?.activeSource)
+        : "-";
+      return `${node.id}:${node.type ?? "default"}:${utilityOnlineSignature}:${syncGroupSignature}:${activeSourceSignature}`;
     })
     .sort();
 
   const edgeSignature = edges
     .map((edge) => {
       const breakerState = normalizeBreakerState(edge.data?.breakerState);
-      return `${edge.source}->${edge.target}:${breakerState}`;
+      const sourceHandleSignature =
+        typeof edge.sourceHandle === "string" ? edge.sourceHandle : "";
+      const targetHandleSignature =
+        typeof edge.targetHandle === "string"
+          ? (edge.targetHandle === TRANSFER_SWITCH_HANDLE_ID.LEGACY_INPUT
+              ? TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+              : edge.targetHandle)
+          : "";
+      return `${edge.source}:${sourceHandleSignature}->${edge.target}:${targetHandleSignature}:${breakerState}`;
     })
     .sort();
 
@@ -122,6 +195,10 @@ export function evaluatePowerFlow(nodes, edges) {
     }
 
     if (!validNodeIdSet.has(edge.source) || !validNodeIdSet.has(edge.target)) {
+      continue;
+    }
+
+    if (!edgeConductsForTransferSwitches(edge, nodeById)) {
       continue;
     }
 
@@ -234,7 +311,12 @@ export function evaluatePowerFlow(nodes, edges) {
   for (const edge of edges) {
     const breakerState = normalizeBreakerState(edge.data?.breakerState);
 
-    if (breakerState !== BREAKER_STATE.CLOSED) {
+    if (
+      breakerState !== BREAKER_STATE.CLOSED ||
+      !validNodeIdSet.has(edge.source) ||
+      !validNodeIdSet.has(edge.target) ||
+      !edgeConductsForTransferSwitches(edge, nodeById)
+    ) {
       edgePowerStateByEdgeId[edge.id] = EDGE_POWER_STATE.DE_ENERGIZED;
       continue;
     }

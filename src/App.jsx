@@ -25,9 +25,14 @@ import ScadaPanel from "./components/ScadaPanel";
 import {
   getDefaultNodeData,
   isSourceNodeType,
+  isTransferSwitchNodeType,
   normalizeGraphState,
   normalizeNodeData
 } from "./nodes/nodeData";
+import {
+  formatTransferSwitchActiveSource,
+  normalizeTransferSwitchActiveSource
+} from "./topology/transferSwitch";
 
 const nodeTypes = {
   utility: UtilityNode,
@@ -47,7 +52,8 @@ const edgeTypes = {
 const STORAGE_KEY = "oneline-canvas-state";
 const MOP_ACTION_TYPE = {
   TOGGLE_SOURCE: "TOGGLE_SOURCE",
-  TOGGLE_BREAKER: "TOGGLE_BREAKER"
+  TOGGLE_BREAKER: "TOGGLE_BREAKER",
+  THROW_TRANSFER_SWITCH: "THROW_TRANSFER_SWITCH"
 };
 
 function isGraphStateShape(value) {
@@ -97,6 +103,10 @@ function normalizeMopTargetState(actionType, targetState) {
     return targetState === true;
   }
 
+  if (actionType === MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH) {
+    return normalizeTransferSwitchActiveSource(targetState);
+  }
+
   return targetState === BREAKER_STATE.CLOSED
     ? BREAKER_STATE.CLOSED
     : BREAKER_STATE.OPEN;
@@ -105,6 +115,10 @@ function normalizeMopTargetState(actionType, targetState) {
 function getDefaultMopActionText(actionType, targetId, targetState) {
   if (actionType === MOP_ACTION_TYPE.TOGGLE_SOURCE) {
     return targetState ? `Restored ${targetId}` : `Killed ${targetId}`;
+  }
+
+  if (actionType === MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH) {
+    return `Transfer ${targetId} to ${formatTransferSwitchActiveSource(targetState)}`;
   }
 
   return targetState === BREAKER_STATE.CLOSED
@@ -124,7 +138,8 @@ function normalizeMopSteps(value) {
         typeof step !== "object" ||
         typeof step.targetId !== "string" ||
         (step.actionType !== MOP_ACTION_TYPE.TOGGLE_SOURCE &&
-          step.actionType !== MOP_ACTION_TYPE.TOGGLE_BREAKER) ||
+          step.actionType !== MOP_ACTION_TYPE.TOGGLE_BREAKER &&
+          step.actionType !== MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH) ||
         !isGraphStateShape(step.snapshot)
       ) {
         return null;
@@ -355,6 +370,37 @@ function App() {
     [setNodes]
   );
 
+  const applyTransferSwitchActiveSource = useCallback(
+    (nodeId, nextActiveSource) => {
+      const normalizedNextActiveSource = normalizeTransferSwitchActiveSource(
+        nextActiveSource
+      );
+
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (node.id !== nodeId || !isTransferSwitchNodeType(node.type)) {
+            return node;
+          }
+
+          const nodeData = normalizeNodeData(node);
+
+          if (nodeData.activeSource === normalizedNextActiveSource) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...nodeData,
+              activeSource: normalizedNextActiveSource
+            }
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
   const renameNodeLabel = useCallback(
     (nodeId, nextLabel) => {
       setNodes((currentNodes) =>
@@ -457,6 +503,39 @@ function App() {
     [nodes, isRecordingMop, applySourceOnlineToggle]
   );
 
+  const handleTransferSwitchThrowRequest = useCallback(
+    (nodeId, nextActiveSource) => {
+      const transferSwitchNode = nodes.find((node) => node.id === nodeId);
+
+      if (!transferSwitchNode || !isTransferSwitchNodeType(transferSwitchNode.type)) {
+        return;
+      }
+
+      const transferSwitchData = normalizeNodeData(transferSwitchNode);
+      const normalizedNextActiveSource = normalizeTransferSwitchActiveSource(
+        nextActiveSource
+      );
+
+      if (transferSwitchData.activeSource === normalizedNextActiveSource) {
+        return;
+      }
+
+      if (isRecordingMop) {
+        setPendingMopAction({
+          targetId: nodeId,
+          actionType: MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH,
+          targetState: normalizedNextActiveSource,
+          actionText: `Transfer ${transferSwitchData.label} to ${formatTransferSwitchActiveSource(
+            normalizedNextActiveSource
+          )}`
+        });
+      }
+
+      applyTransferSwitchActiveSource(nodeId, normalizedNextActiveSource);
+    },
+    [nodes, isRecordingMop, applyTransferSwitchActiveSource]
+  );
+
   const resetAllTrippedBreakers = useCallback(() => {
     setEdges((currentEdges) => {
       let didResetAnyEdge = false;
@@ -554,6 +633,10 @@ function App() {
               : undefined,
           onChangeSyncGroup: isSourceNodeType(node.type)
             ? (nextSyncGroup) => changeNodeSyncGroup(node.id, nextSyncGroup)
+            : undefined,
+          onChangeActiveSource: isTransferSwitchNodeType(node.type)
+            ? (nextActiveSource) =>
+                handleTransferSwitchThrowRequest(node.id, nextActiveSource)
             : undefined
         }
       })),
@@ -563,7 +646,8 @@ function App() {
       sourceIdsByNodeId,
       renameNodeLabel,
       handleSourceToggleRequest,
-      changeNodeSyncGroup
+      changeNodeSyncGroup,
+      handleTransferSwitchThrowRequest
     ]
   );
 
@@ -857,7 +941,7 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 12 MOP Recorder
+            OneLine-Canvas Phase 13 Intelligent Transfer Switches
           </div>
         </div>
       </div>

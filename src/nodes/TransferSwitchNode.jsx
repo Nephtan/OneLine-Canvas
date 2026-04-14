@@ -1,6 +1,12 @@
 import { Handle, Position } from "@xyflow/react";
 import { NODE_POWER_STATE } from "../engine/powerFlow";
 import InlineLabelEditor from "../components/InlineLabelEditor";
+import {
+  TRANSFER_SWITCH_ACTIVE_SOURCE,
+  TRANSFER_SWITCH_HANDLE_ID,
+  formatTransferSwitchActiveSource,
+  normalizeTransferSwitchActiveSource
+} from "../topology/transferSwitch";
 
 function WarningIcon({ className }) {
   return (
@@ -41,6 +47,11 @@ function TransferIcon({ className }) {
 function TransferSwitchNode({ data }) {
   const powerState = data.powerState ?? NODE_POWER_STATE.DEAD;
   const sourceIds = data.sourceIds ?? [];
+  const activeSource = normalizeTransferSwitchActiveSource(data.activeSource);
+  const isPrimaryActive =
+    activeSource === TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY;
+  const isEmergencyActive =
+    activeSource === TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY;
 
   const shellClassName =
     powerState === NODE_POWER_STATE.PHASE_CONFLICT
@@ -87,6 +98,34 @@ function TransferSwitchNode({ data }) {
           ? "border border-amber-100 bg-amber-300"
           : "border border-indigo-300/70 bg-indigo-500/70";
 
+  const activeConductorClassName =
+    powerState === NODE_POWER_STATE.PHASE_CONFLICT
+      ? "bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.45)]"
+      : powerState === NODE_POWER_STATE.BACKFEED
+        ? "bg-orange-400 shadow-[0_0_10px_rgba(251,146,60,0.4)]"
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "bg-amber-300 shadow-[0_0_12px_rgba(252,211,77,0.45)]"
+          : "bg-indigo-400/80";
+
+  const inactiveConductorClassName = "bg-slate-700/80";
+  const inactiveInputHandleClassName = "border border-slate-700 bg-slate-800";
+
+  const primaryButtonClassName = isPrimaryActive
+    ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
+    : "border-slate-700 bg-slate-950 text-slate-400";
+
+  const emergencyButtonClassName = isEmergencyActive
+    ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
+    : "border-slate-700 bg-slate-950 text-slate-400";
+
+  const activeSourceLabel = formatTransferSwitchActiveSource(activeSource);
+
+  function handleActiveSourceClick(event, nextActiveSource) {
+    event.preventDefault();
+    event.stopPropagation();
+    data.onChangeActiveSource?.(nextActiveSource);
+  }
+
   return (
     <div className={`min-w-64 rounded-md border px-4 py-4 text-left ${shellClassName}`}>
       <div className="flex items-center gap-2">
@@ -104,6 +143,90 @@ function TransferSwitchNode({ data }) {
         />
       </div>
       <div className="mt-2 text-xs text-slate-300">{data.switchClass ?? "ATS / STS"}</div>
+      <div className="mt-3 rounded border border-slate-800 bg-slate-950/80 px-3 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">
+            Active Source
+          </div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-300">
+            {activeSourceLabel}
+          </div>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={(event) => {
+              handleActiveSourceClick(
+                event,
+                TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+              );
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${primaryButtonClassName}`}
+          >
+            Primary
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              handleActiveSourceClick(
+                event,
+                TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+              );
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${emergencyButtonClassName}`}
+          >
+            Emergency
+          </button>
+        </div>
+        <div className="relative mt-3 h-14">
+          <div
+            className={`absolute left-[25%] top-0 h-5 w-1 -translate-x-1/2 rounded-full ${
+              isPrimaryActive
+                ? activeConductorClassName
+                : inactiveConductorClassName
+            }`}
+          />
+          <div
+            className={`absolute left-[75%] top-0 h-5 w-1 -translate-x-1/2 rounded-full ${
+              isEmergencyActive
+                ? activeConductorClassName
+                : inactiveConductorClassName
+            }`}
+          />
+          <div
+            className={`absolute left-[25%] top-5 h-1 w-[25%] rounded-full ${
+              isPrimaryActive
+                ? activeConductorClassName
+                : inactiveConductorClassName
+            }`}
+          />
+          <div
+            className={`absolute left-1/2 top-5 h-1 w-[25%] rounded-full ${
+              isEmergencyActive
+                ? activeConductorClassName
+                : inactiveConductorClassName
+            }`}
+          />
+          <div
+            className={`absolute left-1/2 top-5 h-7 w-1 -translate-x-1/2 rounded-full ${activeConductorClassName}`}
+          />
+          <div
+            className={`absolute bottom-0 left-1/2 h-1 w-[72%] -translate-x-1/2 rounded-full ${activeConductorClassName}`}
+          />
+          <div className="absolute left-[25%] top-0 -translate-x-1/2 text-[9px] uppercase tracking-[0.18em] text-slate-500">
+            P
+          </div>
+          <div className="absolute left-[75%] top-0 -translate-x-1/2 text-[9px] uppercase tracking-[0.18em] text-slate-500">
+            E
+          </div>
+        </div>
+      </div>
       <div
         className={`mt-2 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${badgeClassName}`}
       >
@@ -118,19 +241,33 @@ function TransferSwitchNode({ data }) {
       </div>
 
       <Handle
-        id="transfer-bus-in"
+        id={TRANSFER_SWITCH_HANDLE_ID.PRIMARY}
         type="target"
         position={Position.Top}
         isConnectable
-        className={`!h-2.5 !rounded-full ${busHandleClassName}`}
+        className={`!h-2.5 !w-6 !rounded-full ${
+          isPrimaryActive ? busHandleClassName : inactiveInputHandleClassName
+        }`}
         style={{
-          width: "calc(100% - 20px)",
-          left: 10,
-          transform: "translate(0, -50%)"
+          left: "25%",
+          transform: "translate(-50%, -50%)"
         }}
       />
       <Handle
-        id="transfer-bus-out"
+        id={TRANSFER_SWITCH_HANDLE_ID.EMERGENCY}
+        type="target"
+        position={Position.Top}
+        isConnectable
+        className={`!h-2.5 !w-6 !rounded-full ${
+          isEmergencyActive ? busHandleClassName : inactiveInputHandleClassName
+        }`}
+        style={{
+          left: "75%",
+          transform: "translate(-50%, -50%)"
+        }}
+      />
+      <Handle
+        id={TRANSFER_SWITCH_HANDLE_ID.OUTPUT}
         type="source"
         position={Position.Bottom}
         isConnectable

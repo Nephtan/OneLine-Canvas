@@ -1,3 +1,11 @@
+import {
+  TRANSFER_SWITCH_ACTIVE_SOURCE,
+  TRANSFER_SWITCH_HANDLE_ID,
+  isTransferSwitchNodeType,
+  normalizeTransferSwitchActiveSource,
+  normalizeTransferSwitchTargetHandle
+} from "../topology/transferSwitch";
+
 function isSourceNodeType(nodeType) {
   return nodeType === "utility" || nodeType === "generator";
 }
@@ -46,7 +54,8 @@ const DEFAULT_NODE_DATA_BY_TYPE = {
   }),
   transferSwitch: (labelSuffix) => ({
     label: `ATS ${labelSuffix}`,
-    switchClass: "Automatic Transfer Switch"
+    switchClass: "Automatic Transfer Switch",
+    activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
   }),
   mechanical: (labelSuffix) => ({
     label: `FCW ${labelSuffix}`,
@@ -81,17 +90,47 @@ export function normalizeNodeData(node) {
     delete nextData.syncGroup;
   }
 
+  if (isTransferSwitchNodeType(node.type)) {
+    nextData.activeSource = normalizeTransferSwitchActiveSource(
+      currentData.activeSource
+    );
+  } else {
+    delete nextData.activeSource;
+  }
+
   return nextData;
 }
 
 export function normalizeGraphState(graph) {
+  const normalizedNodes = graph.nodes.map((node) => ({
+    ...node,
+    data: normalizeNodeData(node)
+  }));
+  const nodeById = new Map(normalizedNodes.map((node) => [node.id, node]));
+
   return {
-    nodes: graph.nodes.map((node) => ({
-      ...node,
-      data: normalizeNodeData(node)
-    })),
-    edges: graph.edges
+    nodes: normalizedNodes,
+    edges: graph.edges.map((edge) => {
+      const targetNode = nodeById.get(edge.target);
+
+      if (!isTransferSwitchNodeType(targetNode?.type)) {
+        return edge;
+      }
+
+      const normalizedTargetHandle = normalizeTransferSwitchTargetHandle(
+        edge.targetHandle
+      );
+
+      if (edge.targetHandle === normalizedTargetHandle) {
+        return edge;
+      }
+
+      return {
+        ...edge,
+        targetHandle: normalizedTargetHandle
+      };
+    })
   };
 }
 
-export { isSourceNodeType };
+export { isSourceNodeType, isTransferSwitchNodeType, TRANSFER_SWITCH_HANDLE_ID };

@@ -6,6 +6,10 @@ import {
   createTopologyKey,
   evaluatePowerFlow
 } from "./powerFlow";
+import {
+  TRANSFER_SWITCH_ACTIVE_SOURCE,
+  TRANSFER_SWITCH_HANDLE_ID
+} from "../topology/transferSwitch";
 
 function utilityNode(id, options = {}) {
   return {
@@ -71,11 +75,15 @@ function switchboardNode(id) {
   };
 }
 
-function transferSwitchNode(id) {
+function transferSwitchNode(id, options = {}) {
   return {
     id,
     type: "transferSwitch",
-    data: { label: id },
+    data: {
+      label: id,
+      activeSource:
+        options.activeSource ?? TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+    },
     position: { x: 0, y: 0 }
   };
 }
@@ -89,12 +97,13 @@ function mechanicalNode(id) {
   };
 }
 
-function breakerEdge(id, source, target, breakerState) {
+function breakerEdge(id, source, target, breakerState, handleOptions = {}) {
   return {
     id,
     type: "breaker",
     source,
     target,
+    ...handleOptions,
     data: { breakerState }
   };
 }
@@ -414,8 +423,12 @@ describe("evaluatePowerFlow", () => {
     ];
     const edges = [
       breakerEdge("e1", "gen-a", "swbd-a", "closed"),
-      breakerEdge("e2", "swbd-a", "ats-a", "closed"),
-      breakerEdge("e3", "ats-a", "fcw-a", "closed")
+      breakerEdge("e2", "swbd-a", "ats-a", "closed", {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      breakerEdge("e3", "ats-a", "fcw-a", "closed", {
+        sourceHandle: TRANSFER_SWITCH_HANDLE_ID.OUTPUT
+      })
     ];
     const { powerStateByNodeId, sourceIdsByNodeId } = evaluatePowerFlow(nodes, edges);
 
@@ -423,6 +436,119 @@ describe("evaluatePowerFlow", () => {
     expect(powerStateByNodeId["ats-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["fcw-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(sourceIdsByNodeId["fcw-a"]).toEqual(["gen-a"]);
+  });
+
+  it("conducts only the primary ATS feeder when the transfer switch is set to primary", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      generatorNode("gen-a", { syncGroup: "GEN-BUS" }),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+      }),
+      mechanicalNode("fcw-a")
+    ];
+    const edges = [
+      breakerEdge("primary-feed", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      breakerEdge("emergency-feed", "gen-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.EMERGENCY
+      }),
+      breakerEdge("load-feed", "ats-a", "fcw-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFER_SWITCH_HANDLE_ID.OUTPUT
+      })
+    ];
+    const {
+      powerStateByNodeId,
+      sourceIdsByNodeId,
+      edgePowerStateByEdgeId,
+      faultedEdgeIds
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ats-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["fcw-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["ats-a"]).toEqual(["utility-a"]);
+    expect(sourceIdsByNodeId["fcw-a"]).toEqual(["utility-a"]);
+    expect(edgePowerStateByEdgeId["primary-feed"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(edgePowerStateByEdgeId["emergency-feed"]).toBe(
+      EDGE_POWER_STATE.DE_ENERGIZED
+    );
+    expect(edgePowerStateByEdgeId["load-feed"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(faultedEdgeIds).toEqual([]);
+  });
+
+  it("conducts only the emergency ATS feeder when the transfer switch is set to emergency", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      generatorNode("gen-a", { syncGroup: "GEN-BUS" }),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+      }),
+      mechanicalNode("fcw-a")
+    ];
+    const edges = [
+      breakerEdge("primary-feed", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      breakerEdge("emergency-feed", "gen-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.EMERGENCY
+      }),
+      breakerEdge("load-feed", "ats-a", "fcw-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFER_SWITCH_HANDLE_ID.OUTPUT
+      })
+    ];
+    const {
+      powerStateByNodeId,
+      sourceIdsByNodeId,
+      edgePowerStateByEdgeId,
+      faultedEdgeIds
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ats-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["fcw-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["ats-a"]).toEqual(["gen-a"]);
+    expect(sourceIdsByNodeId["fcw-a"]).toEqual(["gen-a"]);
+    expect(edgePowerStateByEdgeId["primary-feed"]).toBe(
+      EDGE_POWER_STATE.DE_ENERGIZED
+    );
+    expect(edgePowerStateByEdgeId["emergency-feed"]).toBe(
+      EDGE_POWER_STATE.ENERGIZED
+    );
+    expect(edgePowerStateByEdgeId["load-feed"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(faultedEdgeIds).toEqual([]);
+  });
+
+  it("prevents phase conflict when unsynchronized sources land on opposite ATS inputs", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      generatorNode("gen-a", { syncGroup: "GRID-B" }),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+      }),
+      mechanicalNode("fcw-a")
+    ];
+    const edges = [
+      breakerEdge("primary-feed", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      breakerEdge("emergency-feed", "gen-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.EMERGENCY
+      }),
+      breakerEdge("load-feed", "ats-a", "fcw-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFER_SWITCH_HANDLE_ID.OUTPUT
+      })
+    ];
+    const { powerStateByNodeId, faultedEdgeIds } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ats-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["fcw-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(faultedEdgeIds).toEqual([]);
   });
 
   it("flags phase conflict when utility and generator are cross-tied", () => {
@@ -541,5 +667,52 @@ describe("createTopologyKey", () => {
     const keyLabelB = createTopologyKey(nodesLabelB, edges);
 
     expect(keyLabelA).toBe(keyLabelB);
+  });
+
+  it("changes when a transfer switch active source changes", () => {
+    const nodesPrimary = [
+      utilityNode("utility-a"),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+      })
+    ];
+    const nodesEmergency = [
+      utilityNode("utility-a"),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+      })
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      })
+    ];
+    const keyPrimary = createTopologyKey(nodesPrimary, edges);
+    const keyEmergency = createTopologyKey(nodesEmergency, edges);
+
+    expect(keyPrimary).not.toBe(keyEmergency);
+  });
+
+  it("changes when an edge handle changes", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+      })
+    ];
+    const edgesPrimary = [
+      breakerEdge("e1", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      })
+    ];
+    const edgesEmergency = [
+      breakerEdge("e1", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.EMERGENCY
+      })
+    ];
+    const keyPrimary = createTopologyKey(nodes, edgesPrimary);
+    const keyEmergency = createTopologyKey(nodes, edgesEmergency);
+
+    expect(keyPrimary).not.toBe(keyEmergency);
   });
 });

@@ -1,4 +1,4 @@
-# OneLine-Canvas Master Handoff (Phases 1-12)
+# OneLine-Canvas Master Handoff (Phases 1-13)
 
 ## Source Map (Historical Inputs)
 | Phase | Revision | Date | Commit Subject | Status |
@@ -14,7 +14,8 @@
 | Phase 9 | `6ae264482bbf10a9113a05493e41c88310c548f9` | `2026-04-13` | `Implement protective isolation auto-trip breakers` | Committed |
 | Phase 10 | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Implement equipment identity and synchronized source paralleling` | Committed |
 | Phase 11 | `17ed10fee00b6d88bc3cf2264ad95b46828833c9` | `2026-04-14` | `Add docked SCADA dashboard for source control and breaker reset` | Committed |
-| Phase 12 | `working-tree` | `2026-04-14` | `Implement snapshot-based MOP recorder and playback deck` | In Progress |
+| Phase 12 | `working-tree` | `2026-04-14` | `Implement snapshot-based MOP recorder and playback deck` | Verified |
+| Phase 13 | `working-tree` | `2026-04-14` | `Implement intelligent ATS interlocks and MOP-aware transfer throws` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -222,6 +223,23 @@
   - Playback is linear only; no branching timeline, reordering, inline editing, or timed autoplay exists yet.
   - Snapshot playback is authoritative and may overwrite manual yard edits made after the recording was captured.
 
+### Phase 13: Intelligent Transfer Switches
+- Revision: `working-tree`
+- Date: `2026-04-14`
+- Subject: `Implement intelligent ATS interlocks and MOP-aware transfer throws`
+- Major additions:
+  - Replaced the ATS single top bus handle with two distinct top target handles: `target-primary` and `target-emergency`, while preserving the continuous bottom output handle.
+  - Added canonical `transferSwitch.data.activeSource` state with a node-local selector UI and visual conductor cue that highlights the currently connected source path.
+  - Added graph normalization that migrates legacy ATS inbound edges with missing or `transfer-bus-in` target handles onto `target-primary` during hydrate/import.
+  - Extended MOP capture so ATS throws are stored as first-class actions and replay cleanly through the existing snapshot deck.
+- Engine-state evolution:
+  - Added a handle-aware ATS conduction gate ahead of adjacency construction so inactive ATS feeder edges behave like mechanically open branches.
+  - Closed ATS feeder edges on the inactive input are now excluded from traversal, shown as `de-energized`, and excluded from `faultedEdgeIds`.
+  - Topology-key invalidation now includes ATS `activeSource` plus edge source/target handle IDs so transfer throws and handle migrations trigger recomputation.
+- Unresolved items at phase end:
+  - ATS behavior is still a manual two-position selector only; no sensing, timers, source-availability logic, or automatic retransfer policy exists yet.
+  - Break-before-make is modeled as pure connectivity filtering with no overlap or transfer-delay timing window.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
@@ -301,6 +319,10 @@
   - The SCADA panel can now capture a fresh MOP recording session from a canonical base snapshot and append sequential keyframe steps after each recorded action settles.
   - Each MOP step persists the operator intent (`TOGGLE_SOURCE` or `TOGGLE_BREAKER`), the target state, operator-friendly action text, and a deep-cloned post-settle graph snapshot.
   - Playback controls overwrite canonical `nodes` and `edges` from the base snapshot or recorded step snapshots so the existing engine can recompute flow, backfeed, and any auto-trip side effects deterministically.
+- Intelligent transfer switching:
+  - `transferSwitch` nodes now expose two named inputs (`target-primary`, `target-emergency`) and one output bus with canonical `data.activeSource` control.
+  - Legacy ATS inbound edges are normalized onto `target-primary` during graph hydration/import so older saved yards continue to conduct through the default primary path.
+  - ATS throws are now MOP-recordable actions and replay purely through canonical snapshot application rather than any special transfer-sequence engine.
 - Tooling guardrails:
   - `package.json` now declares a Node engine policy of `^20.19.0 || >=22.12.0`.
   - `scripts/check-deps.mjs` validates Node version, manifest/lockfile parity, `DEPENDENCIES.md` parity, `node_modules` presence, and top-level npm install health.
@@ -309,6 +331,7 @@
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
   - Queue-based source-set propagation over dynamically built adjacency from the current canvas graph.
+  - Closed breaker edges are first filtered through ATS handle interlocks so inactive transfer-switch inputs never enter the adjacency list.
 - Conflict and backfeed:
   - Multi-source overlap resolves to `Phase Conflict` only when the contributing source IDs do not all map to one shared, non-empty normalized sync group.
   - Blank sync groups are treated as unsynchronized/unknown and never safely parallel.
@@ -321,8 +344,8 @@
   - Remote source actuation and breaker reset are App-level state mutations layered on top of the existing engine output.
   - The MOP recorder also remains App/UI-only: it records operator actions, stores canonical snapshots, and replays them by overwriting `nodes`/`edges` without duplicating any engine calculations.
 - Recompute and memoization:
-  - Topology key includes node identity/type plus root-source online signatures and normalized root sync-group signatures.
-  - Topology key includes edge source/target and breaker state (`open`, `closed`, `tripped`).
+  - Topology key includes node identity/type plus root-source online signatures, normalized root sync-group signatures, and transfer-switch `activeSource`.
+  - Topology key includes edge source/target, source-handle/target-handle IDs, and breaker state (`open`, `closed`, `tripped`).
   - Position-only drags and label-only renames do not invalidate traversal cache.
 
 ### Locked Behavioral Contracts for Implementers
@@ -334,8 +357,11 @@
 - `usePowerFlow` now returns `faultedEdgeIds` in addition to node/edge power maps.
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
 - Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
+- `transferSwitch` nodes now require canonical `data.activeSource` of `"primary"` or `"emergency"`.
+- ATS inactive feeder edges must behave exactly like open branches: non-conductive, `de-energized`, and excluded from conflict/trip evaluation.
 - SCADA panel must remain a pure UI controller and must not implement or duplicate physics calculations.
 - MOP playback must remain a canonical state-overwrite layer on top of React Flow state; it must not simulate clicks or fork the power engine.
+- MOP actions now include ATS throws in addition to source toggles and breaker toggles.
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
 - Sync groups model source identity only; there is no phase-angle, frequency, voltage-matching, or breaker permissive-window simulation.
@@ -348,6 +374,7 @@
 - Persistence is local-browser scoped only; no remote sync, revision history, or multi-user merge workflow exists.
 - `Clear Yard` remains destructive with no confirmation/undo stack.
 - Source controls are now available both node-local and via SCADA, and Phase 12 adds linear scenario playback, but there is still no scripted SOO automation, batch editing, timeline branching, or timed autoplay layer.
+- ATS nodes now prevent primary/emergency source paralleling internally, but they do not yet implement automatic transfer, source-fail sensing, permissive timers, or neutral-position logic.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 
 ## Engine Verification and Test Coverage Snapshot
@@ -370,5 +397,5 @@
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
-- No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, remote actuation, or global breaker reset behavior.
+- No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, or global breaker reset behavior.
 - Automated simulation test execution beyond dependency validation still depends on the current workspace toolchain remaining installed and healthy.
