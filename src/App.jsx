@@ -21,6 +21,12 @@ import BreakerEdge from "./edges/BreakerEdge";
 import usePowerFlow from "./hooks/usePowerFlow";
 import { BREAKER_STATE, EDGE_POWER_STATE } from "./engine/powerFlow";
 import EquipmentPalette, { DRAG_MIME_TYPE } from "./components/EquipmentPalette";
+import {
+  getDefaultNodeData,
+  isSourceNodeType,
+  normalizeGraphState,
+  normalizeNodeData
+} from "./nodes/nodeData";
 
 const nodeTypes = {
   utility: UtilityNode,
@@ -74,7 +80,7 @@ function readGraphStateFromStorage() {
       return getBlankGraph();
     }
 
-    return parsed;
+    return normalizeGraphState(parsed);
   } catch (error) {
     console.error("Failed to parse persisted topology. Falling back to blank yard.", error);
     return getBlankGraph();
@@ -157,20 +163,72 @@ function App() {
     (nodeId) => {
       setNodes((currentNodes) =>
         currentNodes.map((node) => {
-          const isRootSourceType =
-            node.type === "utility" || node.type === "generator";
-
-          if (node.id !== nodeId || !isRootSourceType) {
+          if (node.id !== nodeId || !isSourceNodeType(node.type)) {
             return node;
           }
 
-          const isCurrentlyOnline = node.data?.isSourceOnline !== false;
+          const nodeData = normalizeNodeData(node);
+          const isCurrentlyOnline = nodeData.isSourceOnline !== false;
 
           return {
             ...node,
             data: {
-              ...node.data,
+              ...nodeData,
               isSourceOnline: !isCurrentlyOnline
+            }
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
+  const renameNodeLabel = useCallback(
+    (nodeId, nextLabel) => {
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (node.id !== nodeId) {
+            return node;
+          }
+
+          const nodeData = normalizeNodeData(node);
+
+          if (nodeData.label === nextLabel) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...nodeData,
+              label: nextLabel
+            }
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
+  const changeNodeSyncGroup = useCallback(
+    (nodeId, nextSyncGroup) => {
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (node.id !== nodeId || !isSourceNodeType(node.type)) {
+            return node;
+          }
+
+          const nodeData = normalizeNodeData(node);
+
+          if (nodeData.syncGroup === nextSyncGroup) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...nodeData,
+              syncGroup: nextSyncGroup
             }
           };
         })
@@ -184,16 +242,27 @@ function App() {
       nodes.map((node) => ({
         ...node,
         data: {
-          ...node.data,
+          ...normalizeNodeData(node),
           powerState: powerStateByNodeId[node.id] ?? "Dead",
           sourceIds: sourceIdsByNodeId[node.id] ?? [],
+          onRenameLabel: (nextLabel) => renameNodeLabel(node.id, nextLabel),
           onToggleSourceOnline:
-            node.type === "utility" || node.type === "generator"
+            isSourceNodeType(node.type)
               ? () => toggleRootSourceOnline(node.id)
-              : undefined
+              : undefined,
+          onChangeSyncGroup: isSourceNodeType(node.type)
+            ? (nextSyncGroup) => changeNodeSyncGroup(node.id, nextSyncGroup)
+            : undefined
         }
       })),
-    [nodes, powerStateByNodeId, sourceIdsByNodeId, toggleRootSourceOnline]
+    [
+      nodes,
+      powerStateByNodeId,
+      sourceIdsByNodeId,
+      renameNodeLabel,
+      toggleRootSourceOnline,
+      changeNodeSyncGroup
+    ]
   );
 
   const renderEdges = useMemo(
@@ -274,8 +343,9 @@ function App() {
           throw new Error("Imported file does not contain { nodes: [], edges: [] }.");
         }
 
-        setNodes(parsed.nodes);
-        setEdges(parsed.edges);
+        const normalizedGraph = normalizeGraphState(parsed);
+        setNodes(normalizedGraph.nodes);
+        setEdges(normalizedGraph.edges);
       } catch (error) {
         console.error("Topology import failed.", error);
         window.alert("Invalid topology file. Import aborted.");
@@ -321,68 +391,13 @@ function App() {
       });
       const nodeUuid = crypto.randomUUID();
       const nodeId = `${nodeType}-${nodeUuid}`;
-      const nodeLabelSuffix = nodeUuid.slice(0, 4).toUpperCase();
-      let nodeData;
-
-      switch (nodeType) {
-        case "utility":
-          nodeData = {
-            label: `Utility ${nodeLabelSuffix}`,
-            voltage: "12.47 kV",
-            isSourceOnline: true
-          };
-          break;
-        case "generator":
-          nodeData = {
-            label: `Generator ${nodeLabelSuffix}`,
-            voltage: "480 V Generator",
-            isSourceOnline: true
-          };
-          break;
-        case "switchboard":
-          nodeData = {
-            label: `SWBD ${nodeLabelSuffix}`,
-            boardClass: "Main Distribution Board"
-          };
-          break;
-        case "transferSwitch":
-          nodeData = {
-            label: `ATS ${nodeLabelSuffix}`,
-            switchClass: "Automatic Transfer Switch"
-          };
-          break;
-        case "mechanical":
-          nodeData = {
-            label: `FCW ${nodeLabelSuffix}`,
-            mechanicalClass: "Fan Coil Wall"
-          };
-          break;
-        case "ptx":
-          nodeData = {
-            label: `PTX ${nodeLabelSuffix}`,
-            ratio: "12.47 kV / 480 V"
-          };
-          break;
-        case "load":
-          nodeData = {
-            label: `Load ${nodeLabelSuffix}`,
-            loadClass: "Data Hall"
-          };
-          break;
-        default:
-          nodeData = {
-            label: `MVSG ${nodeLabelSuffix}`,
-            nominalVoltage: "12.47 kV Bus"
-          };
-          break;
-      }
 
       setNodes((currentNodes) =>
         currentNodes.concat({
           id: nodeId,
           type: nodeType,
           position,
-          data: nodeData
+          data: getDefaultNodeData(nodeType, nodeId)
         })
       );
     },
@@ -508,7 +523,7 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 9 Protective Isolation
+            OneLine-Canvas Phase 10 Identity &amp; Synchronization
           </div>
         </div>
       </div>

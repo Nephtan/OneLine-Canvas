@@ -21,6 +21,14 @@ function isRootSourceType(nodeType) {
   return nodeType === "utility" || nodeType === "generator";
 }
 
+export function normalizeSyncGroup(syncGroup) {
+  if (typeof syncGroup !== "string") {
+    return "";
+  }
+
+  return syncGroup.trim().toUpperCase();
+}
+
 export function normalizeBreakerState(state) {
   if (state === BREAKER_STATE.CLOSED) {
     return BREAKER_STATE.CLOSED;
@@ -37,12 +45,47 @@ function isRootSourceOnline(node) {
   return isRootSourceType(node.type) && node.data?.isSourceOnline !== false;
 }
 
+function hasUnsynchronizedSources(sourceIds, nodeById) {
+  const sourceIdList = Array.isArray(sourceIds)
+    ? sourceIds
+    : Array.from(sourceIds ?? []);
+
+  if (sourceIdList.length <= 1) {
+    return false;
+  }
+
+  let expectedSyncGroup = null;
+
+  for (const sourceId of sourceIdList) {
+    const sourceNode = nodeById.get(sourceId);
+    const normalizedSyncGroup = normalizeSyncGroup(sourceNode?.data?.syncGroup);
+
+    if (!normalizedSyncGroup) {
+      return true;
+    }
+
+    if (expectedSyncGroup === null) {
+      expectedSyncGroup = normalizedSyncGroup;
+      continue;
+    }
+
+    if (expectedSyncGroup !== normalizedSyncGroup) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function createTopologyKey(nodes, edges) {
   const nodeSignature = nodes
     .map((node) => {
       const utilityOnlineSignature =
         isRootSourceType(node.type) ? (isRootSourceOnline(node) ? "1" : "0") : "-";
-      return `${node.id}:${node.type ?? "default"}:${utilityOnlineSignature}`;
+      const syncGroupSignature = isRootSourceType(node.type)
+        ? normalizeSyncGroup(node.data?.syncGroup)
+        : "-";
+      return `${node.id}:${node.type ?? "default"}:${utilityOnlineSignature}:${syncGroupSignature}`;
     })
     .sort();
 
@@ -152,21 +195,23 @@ export function evaluatePowerFlow(nodes, edges) {
       continue;
     }
 
+    const hasConflict = hasUnsynchronizedSources(sourceIds, nodeById);
+
     if (isRootSourceType(node?.type)) {
-      if (sourceIds.length > 1) {
+      if (hasConflict) {
         powerStateByNodeId[nodeId] = NODE_POWER_STATE.PHASE_CONFLICT;
         continue;
       }
 
       powerStateByNodeId[nodeId] =
-        sourceIds[0] === nodeId
+        sourceIds.includes(nodeId)
           ? NODE_POWER_STATE.LIVE
           : NODE_POWER_STATE.BACKFEED;
       continue;
     }
 
     powerStateByNodeId[nodeId] =
-      sourceIds.length > 1
+      hasConflict
         ? NODE_POWER_STATE.PHASE_CONFLICT
         : NODE_POWER_STATE.LIVE;
   }
@@ -211,13 +256,13 @@ export function evaluatePowerFlow(nodes, edges) {
       ...sourceIdsAtTarget
     ]);
 
-    if (unionSourceIds.size > 1) {
+    if (hasUnsynchronizedSources(unionSourceIds, nodeById)) {
       edgePowerStateByEdgeId[edge.id] = EDGE_POWER_STATE.PHASE_CONFLICT;
       continue;
     }
 
     edgePowerStateByEdgeId[edge.id] =
-      unionSourceIds.size === 1
+      unionSourceIds.size > 0
         ? EDGE_POWER_STATE.ENERGIZED
         : EDGE_POWER_STATE.DE_ENERGIZED;
   }

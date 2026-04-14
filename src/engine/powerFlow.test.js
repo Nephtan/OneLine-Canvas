@@ -13,6 +13,7 @@ function utilityNode(id, options = {}) {
     type: "utility",
     data: {
       label: id,
+      syncGroup: options.syncGroup ?? "",
       isSourceOnline:
         options.isSourceOnline === undefined ? true : options.isSourceOnline
     },
@@ -26,6 +27,7 @@ function generatorNode(id, options = {}) {
     type: "generator",
     data: {
       label: id,
+      syncGroup: options.syncGroup ?? "",
       isSourceOnline:
         options.isSourceOnline === undefined ? true : options.isSourceOnline
     },
@@ -128,7 +130,7 @@ describe("evaluatePowerFlow", () => {
     expect(powerStateByNodeId["utility-b"]).toBe(NODE_POWER_STATE.LIVE);
   });
 
-  it("flags phase conflict when a tie closes between two live utility sources", () => {
+  it("flags phase conflict when a tie closes between two live utility sources with blank sync groups", () => {
     const nodes = [
       utilityNode("utility-a"),
       utilityNode("utility-b"),
@@ -146,6 +148,76 @@ describe("evaluatePowerFlow", () => {
     expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
     expect(powerStateByNodeId["utility-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+  });
+
+  it("allows two utility sources in the same sync group to parallel without tripping", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "SUBSTATION-1" }),
+      utilityNode("utility-b", { syncGroup: "SUBSTATION-1" }),
+      mvsgNode("mvsg-a"),
+      mvsgNode("mvsg-b")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "utility-b", "mvsg-b", BREAKER_STATE.CLOSED),
+      breakerEdge("tie", "mvsg-a", "mvsg-b", BREAKER_STATE.CLOSED)
+    ];
+    const {
+      powerStateByNodeId,
+      edgePowerStateByEdgeId,
+      faultedEdgeIds,
+      sourceIdsByNodeId
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["utility-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["mvsg-a"]).toEqual(["utility-a", "utility-b"]);
+    expect(edgePowerStateByEdgeId["e1"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(edgePowerStateByEdgeId["e2"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(edgePowerStateByEdgeId["tie"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(faultedEdgeIds).toEqual([]);
+  });
+
+  it("flags phase conflict when one tied utility has a blank sync group and the other is tagged", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      utilityNode("utility-b", { syncGroup: "" }),
+      mvsgNode("mvsg-a"),
+      mvsgNode("mvsg-b")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "utility-b", "mvsg-b", BREAKER_STATE.CLOSED),
+      breakerEdge("tie", "mvsg-a", "mvsg-b", BREAKER_STATE.CLOSED)
+    ];
+    const { powerStateByNodeId, faultedEdgeIds } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(faultedEdgeIds).toEqual(["e1", "e2", "tie"]);
+  });
+
+  it("normalizes sync group strings before allowing a parallel tie", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: " grid-a " }),
+      utilityNode("utility-b", { syncGroup: "GRID-A" }),
+      mvsgNode("mvsg-a"),
+      mvsgNode("mvsg-b")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "utility-b", "mvsg-b", BREAKER_STATE.CLOSED),
+      breakerEdge("tie", "mvsg-a", "mvsg-b", BREAKER_STATE.CLOSED)
+    ];
+    const { powerStateByNodeId, faultedEdgeIds } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["utility-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(faultedEdgeIds).toEqual([]);
   });
 
   it("marks an offline utility as backfeed when energized by another source", () => {
@@ -372,6 +444,32 @@ describe("evaluatePowerFlow", () => {
     expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
     expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
   });
+
+  it("allows a utility and generator with the same sync group to parallel safely", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      generatorNode("gen-a", { syncGroup: " grid-a " }),
+      mvsgNode("mvsg-a"),
+      mvsgNode("mvsg-b")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "gen-a", "mvsg-b", BREAKER_STATE.CLOSED),
+      breakerEdge("tie", "mvsg-a", "mvsg-b", BREAKER_STATE.CLOSED)
+    ];
+    const {
+      powerStateByNodeId,
+      edgePowerStateByEdgeId,
+      faultedEdgeIds
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(edgePowerStateByEdgeId["tie"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(faultedEdgeIds).toEqual([]);
+  });
 });
 
 describe("createTopologyKey", () => {
@@ -406,5 +504,42 @@ describe("createTopologyKey", () => {
     const keyOffline = createTopologyKey(nodesOffline, edges);
 
     expect(keyOnline).not.toBe(keyOffline);
+  });
+
+  it("changes when a root sync group changes", () => {
+    const nodesGridA = [utilityNode("utility-a", { syncGroup: "GRID-A" }), mvsgNode("mvsg-a")];
+    const nodesGridB = [utilityNode("utility-a", { syncGroup: "GRID-B" }), mvsgNode("mvsg-a")];
+    const edges = [breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED)];
+    const keyGridA = createTopologyKey(nodesGridA, edges);
+    const keyGridB = createTopologyKey(nodesGridB, edges);
+
+    expect(keyGridA).not.toBe(keyGridB);
+  });
+
+  it("ignores label-only node changes so renames do not invalidate the key", () => {
+    const nodesLabelA = [utilityNode("utility-a", { syncGroup: "GRID-A" }), mvsgNode("mvsg-a")];
+    const renamedUtilityNode = utilityNode("utility-a", { syncGroup: "GRID-A" });
+    const renamedMvsgNode = mvsgNode("mvsg-a");
+    const nodesLabelB = [
+      {
+        ...renamedUtilityNode,
+        data: {
+          ...renamedUtilityNode.data,
+          label: "UTIL-RENAMED"
+        }
+      },
+      {
+        ...renamedMvsgNode,
+        data: {
+          ...renamedMvsgNode.data,
+          label: "MVSG-01"
+        }
+      }
+    ];
+    const edges = [breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED)];
+    const keyLabelA = createTopologyKey(nodesLabelA, edges);
+    const keyLabelB = createTopologyKey(nodesLabelB, edges);
+
+    expect(keyLabelA).toBe(keyLabelB);
   });
 });

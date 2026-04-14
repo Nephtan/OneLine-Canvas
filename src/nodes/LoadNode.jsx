@@ -1,5 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
 import { NODE_POWER_STATE } from "../engine/powerFlow";
+import InlineLabelEditor from "../components/InlineLabelEditor";
 
 function WarningIcon({ className }) {
   return (
@@ -93,7 +94,14 @@ function LoadNode({ data }) {
           Terminal Load
         </div>
       </div>
-      <div className={`mt-1 text-sm font-semibold ${labelClassName}`}>{data.label}</div>
+      <div className="mt-1">
+        <InlineLabelEditor
+          label={data.label}
+          onCommit={data.onRenameLabel}
+          className={`text-sm font-semibold ${labelClassName}`}
+          inputClassName={`text-sm font-semibold ${labelClassName}`}
+        />
+      </div>
       <div className="mt-2 text-xs text-slate-300">{data.loadClass ?? "Data Hall"}</div>
       <div
         className={`mt-2 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${badgeClassName}`}

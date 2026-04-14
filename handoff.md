@@ -1,4 +1,4 @@
-# OneLine-Canvas Master Handoff (Phases 1-9)
+# OneLine-Canvas Master Handoff (Phases 1-10)
 
 ## Source Map (Historical Inputs)
 | Phase | Revision | Date | Commit Subject | Status |
@@ -12,6 +12,8 @@
 | Phase 7 | `af45a63826a360598164015d84be0d2f9eb1b64e` | `2026-04-13` | `Expand yard with generator big-bus and mechanical node support` | Committed |
 | Phase 8 | `1d3482f4edfba70ec4d0a10ce7fde857efcd4991` | `2026-04-13` | `Big Bus geometry update for all gear` | Committed |
 | Phase 9 | `WORKTREE (uncommitted)` | `2026-04-13` | `Implement protective isolation auto-trip breakers` | Completed in workspace |
+| Phase 10 | `WORKTREE (uncommitted)` | `2026-04-14` | `Implement equipment identity and synchronized source paralleling` | Completed in workspace |
+| Maintenance | `WORKTREE (uncommitted)` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Completed in workspace |
 
 ## Timeline of Architectural Evolution
 
@@ -165,11 +167,42 @@
   - Protective isolation is intentionally aggressive and trips all closed breakers adjacent to conflict nodes.
   - No relay timing/selective coordination hierarchy is modeled yet.
 
+### Phase 10: Identity and Synchronization
+- Revision: `WORKTREE (uncommitted)`
+- Date: `2026-04-14`
+- Subject: `Implement equipment identity and synchronized source paralleling`
+- Major additions:
+  - Centralized canonical node-data defaults/backfill so new, imported, and hydrated nodes all preserve `label` fields and root-source `syncGroup` metadata.
+  - Added reusable inline label editing for every rendered node via double-click rename.
+  - Added visible `Sync Group` inputs on `utility` and `generator` nodes while preserving raw user-entered text in canonical graph state.
+  - Expanded engine tests to cover synchronized paralleling, blank/mixed sync-group conflicts, normalization behavior, and topology-key invalidation rules.
+- Engine-state evolution:
+  - Source propagation still tracks unique root source IDs over closed breakers.
+  - `Phase Conflict` now occurs only when a multi-source set does not collapse to one shared, non-empty normalized sync group.
+  - Same-group Utility/Generator parallels remain energized and do not emit `faultedEdgeIds`, so Phase 9 auto-trip logic stays dormant on healthy synchronized ties.
+- Unresolved items at phase end:
+  - Sync groups model compatibility identity only; there is still no phase-angle, frequency, or permissive-window simulation.
+  - Validation code was updated, but automated Vitest execution remains blocked in this shell until `node`/`npm` are available.
+
+### Maintenance Update: Dependency Inventory
+- Revision: `WORKTREE (uncommitted)`
+- Date: `2026-04-14`
+- Subject: `Add DEPENDENCIES.md dependency inventory`
+- Major additions:
+  - Added `DEPENDENCIES.md` as a repo-level inventory of the declared runtime and development packages from `package.json`.
+  - Documented `npm install` and clarified that `package-lock.json` remains the exact-resolution lockfile for reproducible installs.
+- Engine-state evolution:
+  - No graph traversal, React Flow, protection, or synchronization logic changed.
+- Unresolved items at phase end:
+  - Dependency inventory is documentation only; `package.json` and `package-lock.json` remain the canonical install sources.
+
 ## Cumulative System State (Latest)
 
 ### Completed Architectural Changes
 - Platform and deployment:
   - Vite + React 18 + Tailwind + `@xyflow/react` with `vite-plugin-singlefile` monolithic output strategy.
+- Documentation and repo metadata:
+  - Added `DEPENDENCIES.md` as a quick dependency inventory derived from the existing npm manifest and lockfile.
 - Dynamic canvas and equipment workflow:
   - Blank-canvas sandbox with drag-drop equipment palette, user-created edges, and deletion support.
 - Source-aware dynamic power engine:
@@ -190,20 +223,25 @@
   - Engine emits `faultedEdgeIds` for closed breakers adjacent to `Phase Conflict` nodes.
   - App auto-trips those edges to `breakerState: "tripped"` and forces a recalculation cascade.
   - Breaker interaction enforces mechanical reset (`tripped -> open -> closed`).
+- Equipment identity and synchronization:
+  - Every node now carries a canonical `data.label`.
+  - `utility` and `generator` nodes also carry raw `data.syncGroup` strings that persist through localStorage and JSON import/export.
+  - All node labels are renameable in-place via double-click without mutating topology geometry.
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
   - Queue-based source-set propagation over dynamically built adjacency from the current canvas graph.
 - Conflict and backfeed:
-  - Multi-source overlap resolves to `Phase Conflict`.
-  - Root fed by a non-self source resolves to `Backfeed`.
+  - Multi-source overlap resolves to `Phase Conflict` only when the contributing source IDs do not all map to one shared, non-empty normalized sync group.
+  - Blank sync groups are treated as unsynchronized/unknown and never safely parallel.
+  - Root fed by synchronized foreign sources without its own source ID resolves to `Backfeed`.
 - Protection feedback:
   - Conflict evaluation emits a deterministic fault-hit list of closed breakers connected to conflicted nodes.
   - The hit list is consumed by `App.jsx` to trip breakers and clear active faults in the next recompute.
 - Recompute and memoization:
-  - Topology key includes node identity/type plus root-source online signatures.
+  - Topology key includes node identity/type plus root-source online signatures and normalized root sync-group signatures.
   - Topology key includes edge source/target and breaker state (`open`, `closed`, `tripped`).
-  - Position-only drags do not invalidate traversal cache.
+  - Position-only drags and label-only renames do not invalidate traversal cache.
 
 ### Locked Behavioral Contracts for Implementers
 - Topology source of truth is always live React Flow `nodes`/`edges`; no hardcoded adjacency is permitted.
@@ -212,9 +250,11 @@
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
 - Persistence contract remains `{ nodes, edges }` with shallow import validation.
 - `usePowerFlow` now returns `faultedEdgeIds` in addition to node/edge power maps.
+- Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
+- Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
-- Multi-source overlap is treated as immediate `Phase Conflict`; no phase-angle/synchronization compatibility model exists.
+- Sync groups model source identity only; there is no phase-angle, frequency, voltage-matching, or breaker permissive-window simulation.
 - Protective isolation is coarse-grained: all closed breakers adjacent to conflict nodes trip in the same cycle.
 - No relay timing/coordination hierarchy exists (instantaneous trip, no selective delay curves, no lockout sequencing).
 - Big Bus geometry intentionally allows operator-error topologies; no interlock/sequencing logic is enforced.
@@ -230,16 +270,19 @@
 ### Existing Engine Test Coverage (`src/engine/powerFlow.test.js`)
 - Continuity and topology-key behavior for open/closed breaker paths.
 - Source aggregation with explicit assertions for `Backfeed` and `Phase Conflict`.
+- Sync-group-aware conflict resolution for same-group parallel, blank/mixed-group conflict, and normalization behavior.
 - Edge power-state mapping (`de-energized`, `energized`, `phase-conflict`).
 - Trip-aware breaker behavior (`tripped` treated as non-conductive/de-energized).
 - Fault-hitlist emission (`faultedEdgeIds`) for conflict corridors and non-conflict empty-set checks.
 - PTX/load downstream propagation and utility-offline blackout behavior.
 - Generator root propagation, generator-offline behavior, utility+generator tie conflict, and generator topology-key invalidation.
+- Root sync-group topology-key invalidation and label-only cache stability.
 - End-to-end chain propagation through `generator -> switchboard -> transferSwitch -> mechanical`.
 
 ### Current Validation Gaps
-- No engine model/tests for synchronization compatibility, phase-angle drift, or source-matching windows.
+- No engine model/tests for synchronization permissives beyond shared sync-group identity (phase-angle drift, frequency slip, or voltage windows).
 - No selective relay coordination model (zone-selective interlocking, staged tripping, breaker priorities).
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
+- Automated test execution is currently blocked in this shell because `node`/`npm` are not available on PATH or in standard local install locations.

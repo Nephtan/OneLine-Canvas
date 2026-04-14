@@ -1,5 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
 import { NODE_POWER_STATE } from "../engine/powerFlow";
+import InlineLabelEditor from "../components/InlineLabelEditor";
 
 function WarningIcon({ className }) {
   return (
@@ -87,11 +88,46 @@ function UtilityNode({ data }) {
           {isSourceOnline ? "Online" : "Offline"}
         </span>
       </div>
-      <div className={`mt-1 text-sm font-semibold ${isTrulyOffline ? "text-slate-400" : "text-slate-100"}`}>
-        {data.label}
+      <div className="mt-1">
+        <InlineLabelEditor
+          label={data.label}
+          onCommit={data.onRenameLabel}
+          className={`text-sm font-semibold ${isTrulyOffline ? "text-slate-400" : "text-slate-100"}`}
+          inputClassName={`text-sm font-semibold ${isTrulyOffline ? "text-slate-300" : "text-slate-100"}`}
+        />
       </div>
       <div className={`mt-2 text-xs ${isTrulyOffline ? "text-slate-500" : "text-slate-300"}`}>
         {data.voltage}
+      </div>
+      <div className="mt-2">
+        <div className={`text-[9px] uppercase tracking-[0.18em] ${isTrulyOffline ? "text-slate-500" : "text-slate-400"}`}>
+          Sync Group
+        </div>
+        <input
+          type="text"
+          value={data.syncGroup ?? ""}
+          placeholder="GRID-A"
+          onChange={(event) => {
+            data.onChangeSyncGroup?.(event.target.value);
+          }}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+          }}
+          className={`nodrag mt-1 w-full rounded border bg-slate-950/80 px-2 py-1 text-xs outline-none focus:border-emerald-300/80 ${
+            isTrulyOffline
+              ? "border-slate-600 text-slate-300 placeholder:text-slate-600"
+              : "border-slate-500/70 text-slate-100 placeholder:text-slate-500"
+          }`}
+        />
       </div>
       <div
         className={`mt-2 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${badgeClassName}`}
