@@ -109,10 +109,16 @@ function LoadNode({ data }) {
       </div>
 
       <Handle
-        id="load-in"
+        id="load-bus-in"
         type="target"
-        position={Position.Left}
-        className={`h-3 w-3 ${handleClassName}`}
+        position={Position.Top}
+        isConnectable
+        className={`!h-2.5 !rounded-full ${handleClassName}`}
+        style={{
+          width: "calc(100% - 20px)",
+          left: 10,
+          transform: "translate(0, -50%)"
+        }}
       />
     </div>
   );

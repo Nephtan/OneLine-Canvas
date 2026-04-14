@@ -94,16 +94,28 @@ function MVSGNode({ data }) {
       </div>
 
       <Handle
-        id="mvsg-in"
+        id="mvsg-bus-in"
         type="target"
-        position={Position.Left}
-        className={`h-3 w-3 ${handleClassName}`}
+        position={Position.Top}
+        isConnectable
+        className={`!h-2.5 !rounded-full ${handleClassName}`}
+        style={{
+          width: "calc(100% - 20px)",
+          left: 10,
+          transform: "translate(0, -50%)"
+        }}
       />
       <Handle
-        id="mvsg-out"
+        id="mvsg-bus-out"
         type="source"
-        position={Position.Right}
-        className={`h-3 w-3 ${handleClassName}`}
+        position={Position.Bottom}
+        isConnectable
+        className={`!h-2.5 !rounded-full ${handleClassName}`}
+        style={{
+          width: "calc(100% - 20px)",
+          left: 10,
+          transform: "translate(0, 50%)"
+        }}
       />
     </div>
   );

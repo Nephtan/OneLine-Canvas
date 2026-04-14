@@ -1,58 +1,35 @@
-# OneLine-Canvas Handoff (Phase 7: 480V & Mechanical Expansion)
+# OneLine-Canvas Handoff (Phase 8: Universal Big Bus Standardization)
 
 ## 1. Completed Architectural Changes
-- Added new root-capable source node:
-  - `GeneratorNode` (`src/nodes/GeneratorNode.jsx`) with distinct diesel/engine visual identity.
-  - Includes interactive `Kill Feed` / `Restore Feed` control using `data.isSourceOnline`.
-  - Implements the same source-state semantics and visual precedence model as utility (`Live`, `Dead`, `Backfeed`, `Phase Conflict`).
-- Expanded physics engine root-source qualification in `src/engine/powerFlow.js`:
-  - root source types are now `utility` **and** `generator`.
-  - root source online gating uses `data.isSourceOnline !== false` for both types.
-  - topology key source-online signature now accounts for both root source types.
-  - traversal/set-union math and edge-state logic were otherwise preserved.
-- Added Big Bus distribution nodes:
-  - `SwitchboardNode` (`src/nodes/SwitchboardNode.jsx`)
-  - `TransferSwitchNode` (`src/nodes/TransferSwitchNode.jsx`)
-  - Both implement Big Bus handle geometry:
-    - single continuous top `target` bus handle,
-    - single continuous bottom `source` bus handle,
-    - `isConnectable={true}` for unlimited edge snaps.
-- Added mechanical terminal sink:
-  - `MechanicalNode` (`src/nodes/MechanicalNode.jsx`) with fan/mechanical styling.
-  - Terminal behavior enforced by handle geometry (`target` only, no `source`).
-- Updated `App.jsx` node registry and spawn factory:
-  - registered new node types: `generator`, `switchboard`, `transferSwitch`, `mechanical`.
-  - expanded drag/drop whitelist and default node data payloads for all new types.
-  - generalized root source toggle callback injection for both utility and generator node types.
-- Updated equipment palette (`src/components/EquipmentPalette.jsx`) with draggable entries for:
-  - Generator, Switchboard, Transfer Switch, Mechanical.
-- Preserved persistence/export/import format and flow:
-  - no schema change to persisted graph (`{ nodes, edges }`);
-  - all new node types serialize and hydrate natively through existing localStorage and JSON file paths.
-- Expanded engine unit tests (`src/engine/powerFlow.test.js`):
-  - generator root propagation,
-  - generator-offline de-energization,
-  - utility+generator tie conflict,
-  - generator topology-key invalidation,
-  - generator -> switchboard -> transfer switch -> mechanical downstream propagation.
+- Completed universal top-to-bottom handle retrofit across existing equipment families while preserving existing state/persistence architecture.
+- Root source retrofit:
+  - `UtilityNode.jsx`: removed legacy side handles and now exposes one continuous bottom `source` bus handle (`Position.Bottom`, `isConnectable={true}`).
+  - `GeneratorNode.jsx`: removed legacy side handles and now exposes one continuous bottom `source` bus handle (`Position.Bottom`, `isConnectable={true}`).
+- Pass-through gear retrofit:
+  - `MVSGNode.jsx`: replaced left/right handles with a continuous top `target` bus and continuous bottom `source` bus.
+  - `PTXNode.jsx`: replaced left/right handles with a continuous top `target` bus and continuous bottom `source` bus.
+- Terminal sink retrofit:
+  - `LoadNode.jsx`: replaced side target handle with continuous top `target` bus only.
+  - `MechanicalNode.jsx`: standardized to continuous top `target` bus only.
+- Visual polish:
+  - all retrofitted handles now render as busbars (wide rounded bars spanning node width) rather than default React Flow dot handles.
+  - maintained state-driven color inheritance on bus handles (`Live`, `Dead`, `Backfeed`, `Phase Conflict`).
+- No physics logic changes:
+  - `usePowerFlow` and engine traversal math were not modified for Phase 8.
 
 ## 2. Current State of the Dynamic Graph Engine
-- Engine remains source-aware and topology-agnostic with dynamic adjacency from current React Flow `nodes`/`edges`.
-- Root source set now includes:
+- Engine remains source-aware and topology-agnostic with root sources:
   - `utility`
   - `generator`
-- State outputs remain:
-  - node: `Dead`, `Live`, `Backfeed`, `Phase Conflict`
-  - edge: `de-energized`, `energized`, `phase-conflict`
-- Topology recomputation is still memoized and deterministic:
-  - position-only drags do not invalidate topology key;
-  - online/offline source toggles for utility and generator do invalidate topology key.
-- Big Bus philosophy is implemented in UI geometry only:
-  - no bespoke port-mapping or direction-routing logic beyond single bus handles.
+- Connectivity resolution still relies only on React Flow edge `source` and `target` node IDs.
+- UI handle position/geometry changes do not alter electrical math; they only affect user interaction and wiring ergonomics.
+- Persistence/export/import behavior remains intact:
+  - `{ nodes, edges }` graph schema unchanged,
+  - all node types continue to serialize and hydrate through localStorage and JSON file import/export.
 
 ## 3. Known Bugs / Unhandled Edge Cases
-- Big Bus handles permit intentionally invalid/operator-error topologies by design; no electrical interlock constraints are applied.
-- Mechanical/load terminal semantics are UI-enforced via handle geometry only; no additional electrical-direction validation is implemented.
-- Imported topology validation remains shallow (top-level arrays only); deep schema/type validation for unknown node payloads is not implemented.
-- Persistence remains local-only (no remote sync, version history, or multi-user merge resolution).
-- Protection behavior remains visual-only (no breaker auto-trip, relay coordination, selective isolation, or fault-clearing timing simulation).
+- Big Bus geometry intentionally permits operator-error topologies; no electrical interlock or sequencing constraints are enforced.
+- Terminal semantics (Load/Mechanical) are UI-handle constrained only; no deeper directional validation logic exists.
+- Imported topology validation remains shallow (top-level array shape only); no deep node schema validation/versioning is implemented.
+- Protection behavior remains visual-only (no relay trip logic, selective coordination, or fault-clearing simulation).
+- Persistence remains local/browser-scoped (no remote sync, revision history, or collaborative merge controls).

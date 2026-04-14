@@ -111,11 +111,16 @@ function MechanicalNode({ data }) {
       </div>
 
       <Handle
-        id="mechanical-in"
+        id="mechanical-bus-in"
         type="target"
         position={Position.Top}
         isConnectable
-        className={`!h-2.5 !w-8 !rounded-full ${handleClassName}`}
+        className={`!h-2.5 !rounded-full ${handleClassName}`}
+        style={{
+          width: "calc(100% - 20px)",
+          left: 10,
+          transform: "translate(0, -50%)"
+        }}
       />
     </div>
   );

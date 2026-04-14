@@ -122,17 +122,16 @@ function UtilityNode({ data }) {
       </button>
 
       <Handle
-        id="utility-in"
-        type="target"
-        position={Position.Left}
-        className={`h-3 w-3 ${handleClassName}`}
-      />
-
-      <Handle
-        id="utility-out"
+        id="utility-bus-out"
         type="source"
-        position={Position.Right}
-        className={`h-3 w-3 ${handleClassName}`}
+        position={Position.Bottom}
+        isConnectable
+        className={`!h-2.5 !rounded-full ${handleClassName}`}
+        style={{
+          width: "calc(100% - 20px)",
+          left: 10,
+          transform: "translate(0, 50%)"
+        }}
       />
     </div>
   );
