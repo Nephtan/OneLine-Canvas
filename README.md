@@ -18,3 +18,19 @@ Bastard-proof your MOPs before you ever step foot on the yard.
 * **Live Power Propagation:** The engine evaluates circuit states in real-time. Close a breaker, and watch the flow of live voltage snake through your loops. 
 * **Catastrophic Conflict Detection:** Instantly flags dead-bus conditions, accidental paralleling of out-of-phase sources, and backfeed vulnerabilities. 
 * **Cx Sequencing Validation:** Step through your Commissioning (Cx) scripts and Lock-Out/Tag-Out (LOTO) procedures safely. Prove the logic works before an operator flips copper in the real world.
+
+---
+
+## Contributing
+
+If you want to add new component types, refine the simulation loop, or build a better UI for tagging components, pull requests are welcome. Make sure your logic is sound. We do not accept code that breaks fundamental laws of thermodynamics, introduces phantom loads, or assumes a perfect physical world.
+
+---
+
+## License & Usage
+
+This repository is licensed under the AGPLv3. This is an aggressively copyleft license, and it is infectious by design to enforce a twisted kind of honor among thieves.
+
+You are free to use, modify, and distribute this software. However, the AGPL comes with a barbed hook: if you modify this codebase and distribute it—or crucially, if you let users interact with a modified version of this software over a network (like a web-hosted service)—you must make your complete underlying source code publicly available under the exact same AGPLv3 license.
+
+There is no server-side loophole. If you want to leverage this logic to build a proprietary tool for your firm's internal coordination workflows, you either open-source your entire derivative project for the community to dissect, or you walk away.
