@@ -3,9 +3,13 @@ function isSourceNodeType(nodeType) {
 }
 
 function getNodeLabelSuffix(seed) {
-  const suffix = String(seed ?? "")
+  const normalizedSeed = String(seed ?? "");
+  const canonicalSeed = normalizedSeed.includes("-")
+    ? normalizedSeed.slice(normalizedSeed.indexOf("-") + 1)
+    : normalizedSeed;
+  const suffix = canonicalSeed
     .replace(/[^a-z0-9]/gi, "")
-    .slice(-4)
+    .slice(0, 4)
     .toUpperCase();
 
   return suffix || "0000";
