@@ -1,6 +1,8 @@
 import { Handle, Position } from "@xyflow/react";
 
 function UtilityNode({ data }) {
+  const isLive = data.powerState === "Live";
+
   return (
     <div className="min-w-56 rounded-md border border-emerald-500/70 bg-slate-900 px-4 py-3 text-left shadow-lg shadow-emerald-950/40">
       <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/80">
@@ -10,6 +12,15 @@ function UtilityNode({ data }) {
         {data.label}
       </div>
       <div className="mt-2 text-xs text-slate-300">{data.voltage}</div>
+      <div
+        className={`mt-2 inline-block rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${
+          isLive
+            ? "border-emerald-300/80 bg-emerald-400/20 text-emerald-100"
+            : "border-slate-600 bg-slate-800/70 text-slate-300"
+        }`}
+      >
+        {data.powerState ?? "Dead"}
+      </div>
 
       <Handle
         id="utility-out"

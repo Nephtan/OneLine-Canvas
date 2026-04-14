@@ -11,10 +11,17 @@ import {
 import "@xyflow/react/dist/style.css";
 import UtilityNode from "./nodes/UtilityNode";
 import MVSGNode from "./nodes/MVSGNode";
+import BreakerEdge from "./edges/BreakerEdge";
+import usePowerFlow from "./hooks/usePowerFlow";
+import { BREAKER_STATE } from "./engine/powerFlow";
 
 const nodeTypes = {
   utility: UtilityNode,
   mvsg: MVSGNode
+};
+
+const edgeTypes = {
+  breaker: BreakerEdge
 };
 
 function buildInitialSandboxGraph() {
@@ -58,8 +65,21 @@ function buildInitialSandboxGraph() {
 
 function App() {
   const initialGraph = useMemo(() => buildInitialSandboxGraph(), []);
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialGraph.nodes);
+  const [nodes, , onNodesChange] = useNodesState(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges);
+  const { powerStateByNodeId } = usePowerFlow(nodes, edges);
+
+  const renderNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          powerState: powerStateByNodeId[node.id] ?? "Dead"
+        }
+      })),
+    [nodes, powerStateByNodeId]
+  );
 
   const onConnect = useCallback(
     (connection) => {
@@ -67,9 +87,10 @@ function App() {
         addEdge(
           {
             ...connection,
-            type: "smoothstep",
-            animated: false,
-            style: { stroke: "#94a3b8", strokeWidth: 2.25 }
+            type: "breaker",
+            data: {
+              breakerState: BREAKER_STATE.OPEN
+            }
           },
           currentEdges
         )
@@ -78,11 +99,42 @@ function App() {
     [setEdges]
   );
 
+  const onEdgeClick = useCallback(
+    (event, edge) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (edge.type !== "breaker") {
+        return;
+      }
+
+      setEdges((currentEdges) =>
+        currentEdges.map((currentEdge) => {
+          if (currentEdge.id !== edge.id) {
+            return currentEdge;
+          }
+
+          const nextState =
+            currentEdge.data?.breakerState === BREAKER_STATE.CLOSED
+              ? BREAKER_STATE.OPEN
+              : BREAKER_STATE.CLOSED;
+
+          return {
+            ...currentEdge,
+            data: {
+              ...currentEdge.data,
+              breakerState: nextState
+            }
+          };
+        })
+      );
+    },
+    [setEdges]
+  );
+
   const defaultEdgeOptions = useMemo(
     () => ({
-      type: "smoothstep",
-      animated: false,
-      style: { stroke: "#94a3b8", strokeWidth: 2.25 }
+      type: "breaker"
     }),
     []
   );
@@ -90,12 +142,14 @@ function App() {
   return (
     <div className="fixed inset-0 h-screen w-screen bg-slate-950 font-mono text-slate-100">
       <ReactFlow
-        nodes={nodes}
+        nodes={renderNodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onEdgeClick={onEdgeClick}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
         minZoom={0.2}
@@ -115,7 +169,7 @@ function App() {
       </ReactFlow>
 
       <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-        OneLine-Canvas Phase 1 Sandbox
+        OneLine-Canvas Phase 2 Dynamic Continuity
       </div>
     </div>
   );
