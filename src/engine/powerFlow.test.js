@@ -28,6 +28,24 @@ function mvsgNode(id) {
   };
 }
 
+function ptxNode(id) {
+  return {
+    id,
+    type: "ptx",
+    data: { label: id },
+    position: { x: 0, y: 0 }
+  };
+}
+
+function loadNode(id) {
+  return {
+    id,
+    type: "load",
+    data: { label: id },
+    position: { x: 0, y: 0 }
+  };
+}
+
 function breakerEdge(id, source, target, breakerState) {
   return {
     id,
@@ -142,6 +160,49 @@ describe("evaluatePowerFlow", () => {
     expect(edgePowerStateByEdgeId["live-edge"]).toBe(EDGE_POWER_STATE.ENERGIZED);
     expect(edgePowerStateByEdgeId["open-edge"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
     expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.DEAD);
+  });
+
+  it("energizes PTX and Load in a downstream chain from one utility", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      mvsgNode("mvsg-a"),
+      ptxNode("ptx-a"),
+      loadNode("load-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", "closed"),
+      breakerEdge("e2", "mvsg-a", "ptx-a", "closed"),
+      breakerEdge("e3", "ptx-a", "load-a", "closed")
+    ];
+    const { powerStateByNodeId, sourceIdsByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["ptx-a"]).toEqual(["utility-a"]);
+    expect(sourceIdsByNodeId["load-a"]).toEqual(["utility-a"]);
+  });
+
+  it("drops PTX and Load dark when the only utility source is offline", () => {
+    const nodes = [
+      utilityNode("utility-a", { isSourceOnline: false }),
+      mvsgNode("mvsg-a"),
+      ptxNode("ptx-a"),
+      loadNode("load-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", "closed"),
+      breakerEdge("e2", "mvsg-a", "ptx-a", "closed"),
+      breakerEdge("e3", "ptx-a", "load-a", "closed")
+    ];
+    const { powerStateByNodeId, edgePowerStateByEdgeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(edgePowerStateByEdgeId["e1"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+    expect(edgePowerStateByEdgeId["e2"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+    expect(edgePowerStateByEdgeId["e3"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
   });
 });
 

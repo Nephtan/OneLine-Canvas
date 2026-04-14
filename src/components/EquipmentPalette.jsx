@@ -36,6 +36,30 @@ function EquipmentPalette({ onDragStart }) {
           </div>
           <div className="mt-1 text-xs text-sky-100">Medium-voltage switchgear</div>
         </button>
+
+        <button
+          type="button"
+          draggable
+          onDragStart={(event) => onDragStart(event, "ptx")}
+          className="w-full cursor-grab rounded border border-violet-500/60 bg-slate-800 px-3 py-2 text-left active:cursor-grabbing"
+        >
+          <div className="text-[10px] uppercase tracking-[0.2em] text-violet-300/80">
+            PTX
+          </div>
+          <div className="mt-1 text-xs text-violet-100">Pad-mount transformer</div>
+        </button>
+
+        <button
+          type="button"
+          draggable
+          onDragStart={(event) => onDragStart(event, "load")}
+          className="w-full cursor-grab rounded border border-cyan-500/60 bg-slate-800 px-3 py-2 text-left active:cursor-grabbing"
+        >
+          <div className="text-[10px] uppercase tracking-[0.2em] text-cyan-300/80">
+            Load
+          </div>
+          <div className="mt-1 text-xs text-cyan-100">Data hall / cooling plant</div>
+        </button>
       </div>
     </aside>
   );

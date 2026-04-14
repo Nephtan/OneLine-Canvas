@@ -11,6 +11,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import UtilityNode from "./nodes/UtilityNode";
 import MVSGNode from "./nodes/MVSGNode";
+import PTXNode from "./nodes/PTXNode";
+import LoadNode from "./nodes/LoadNode";
 import BreakerEdge from "./edges/BreakerEdge";
 import usePowerFlow from "./hooks/usePowerFlow";
 import { BREAKER_STATE, EDGE_POWER_STATE } from "./engine/powerFlow";
@@ -18,7 +20,9 @@ import EquipmentPalette, { DRAG_MIME_TYPE } from "./components/EquipmentPalette"
 
 const nodeTypes = {
   utility: UtilityNode,
-  mvsg: MVSGNode
+  mvsg: MVSGNode,
+  ptx: PTXNode,
+  load: LoadNode
 };
 
 const edgeTypes = {
@@ -39,6 +43,29 @@ function App() {
   const { powerStateByNodeId, sourceIdsByNodeId, edgePowerStateByEdgeId } =
     usePowerFlow(nodes, edges);
 
+  const toggleUtilitySourceOnline = useCallback(
+    (nodeId) => {
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (node.id !== nodeId || node.type !== "utility") {
+            return node;
+          }
+
+          const isCurrentlyOnline = node.data?.isSourceOnline !== false;
+
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              isSourceOnline: !isCurrentlyOnline
+            }
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
   const renderNodes = useMemo(
     () =>
       nodes.map((node) => ({
@@ -46,10 +73,14 @@ function App() {
         data: {
           ...node.data,
           powerState: powerStateByNodeId[node.id] ?? "Dead",
-          sourceIds: sourceIdsByNodeId[node.id] ?? []
+          sourceIds: sourceIdsByNodeId[node.id] ?? [],
+          onToggleSourceOnline:
+            node.type === "utility"
+              ? () => toggleUtilitySourceOnline(node.id)
+              : undefined
         }
       })),
-    [nodes, powerStateByNodeId, sourceIdsByNodeId]
+    [nodes, powerStateByNodeId, sourceIdsByNodeId, toggleUtilitySourceOnline]
   );
 
   const renderEdges = useMemo(
@@ -100,7 +131,13 @@ function App() {
       const nodeType = event.dataTransfer.getData(DRAG_MIME_TYPE);
       const reactFlowInstance = reactFlowInstanceRef.current;
 
-      if (!reactFlowInstance || (nodeType !== "utility" && nodeType !== "mvsg")) {
+      if (
+        !reactFlowInstance ||
+        (nodeType !== "utility" &&
+          nodeType !== "mvsg" &&
+          nodeType !== "ptx" &&
+          nodeType !== "load")
+      ) {
         return;
       }
 
@@ -118,6 +155,16 @@ function App() {
               voltage: "12.47 kV",
               isSourceOnline: true
             }
+          : nodeType === "ptx"
+            ? {
+                label: `PTX ${nodeLabelSuffix}`,
+                ratio: "12.47 kV / 480 V"
+              }
+            : nodeType === "load"
+              ? {
+                  label: `Load ${nodeLabelSuffix}`,
+                  loadClass: "Data Hall"
+                }
           : {
               label: `MVSG ${nodeLabelSuffix}`,
               nominalVoltage: "12.47 kV Bus"
@@ -239,7 +286,7 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 4 Equipment Sandbox
+            OneLine-Canvas Phase 5 Expanded Yard & Source Control
           </div>
         </div>
       </div>

@@ -20,79 +20,85 @@ function WarningIcon({ className }) {
   );
 }
 
-function UtilityNode({ data }) {
+function TransformerIcon({ className }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h5v10H4zM15 7h5v10h-5z" />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9 9c1.3 0 1.3 2 2.7 2s1.3-2 2.6-2M9 13c1.3 0 1.3 2 2.7 2s1.3-2 2.6-2"
+      />
+    </svg>
+  );
+}
+
+function PTXNode({ data }) {
   const powerState = data.powerState ?? NODE_POWER_STATE.DEAD;
   const sourceIds = data.sourceIds ?? [];
-  const isSourceOnline = data.isSourceOnline !== false;
-  const isTrulyOffline =
-    !isSourceOnline && powerState === NODE_POWER_STATE.DEAD;
 
   const shellClassName =
     powerState === NODE_POWER_STATE.PHASE_CONFLICT
       ? "border-red-500 bg-red-900/50 shadow-[0_0_0_1px_rgba(248,113,113,0.45),0_0_20px_rgba(239,68,68,0.45)] animate-pulse"
       : powerState === NODE_POWER_STATE.BACKFEED
         ? "border-orange-500 bg-orange-950/40 shadow-[0_0_0_1px_rgba(251,146,60,0.3),0_0_16px_rgba(249,115,22,0.35)]"
-        : isTrulyOffline
-          ? "border-slate-700 bg-slate-900/65 shadow-lg shadow-slate-950/80"
-          : powerState === NODE_POWER_STATE.LIVE
-          ? "border-emerald-500/80 bg-slate-900 shadow-[0_0_0_1px_rgba(52,211,153,0.2),0_0_14px_rgba(16,185,129,0.24)]"
-          : "border-slate-600 bg-slate-900 shadow-lg shadow-slate-950/70";
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "border-amber-300/90 bg-slate-900 shadow-[0_0_0_1px_rgba(250,204,21,0.35),0_0_20px_rgba(250,204,21,0.35)]"
+          : "border-violet-900 bg-slate-900 shadow-lg shadow-slate-950/70";
 
   const titleClassName =
     powerState === NODE_POWER_STATE.PHASE_CONFLICT
       ? "text-red-200"
       : powerState === NODE_POWER_STATE.BACKFEED
         ? "text-orange-200"
-        : isTrulyOffline
-          ? "text-slate-500"
-          : powerState === NODE_POWER_STATE.LIVE
-          ? "text-emerald-300/90"
-          : "text-slate-400";
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "text-amber-200/90"
+          : "text-violet-300/80";
+
+  const labelClassName =
+    powerState === NODE_POWER_STATE.PHASE_CONFLICT
+      ? "text-red-100"
+      : powerState === NODE_POWER_STATE.BACKFEED
+        ? "text-orange-100"
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "text-amber-100"
+          : "text-violet-100";
 
   const badgeClassName =
     powerState === NODE_POWER_STATE.PHASE_CONFLICT
       ? "border-red-400 bg-red-950/70 text-red-100"
       : powerState === NODE_POWER_STATE.BACKFEED
         ? "border-orange-400 bg-orange-950/70 text-orange-100"
-        : isTrulyOffline
-          ? "border-slate-600 bg-slate-800/70 text-slate-400"
-          : powerState === NODE_POWER_STATE.LIVE
-          ? "border-emerald-300/80 bg-emerald-400/20 text-emerald-100"
-          : "border-slate-600 bg-slate-800/70 text-slate-300";
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
+          : "border-violet-700 bg-violet-950/30 text-violet-100";
 
   const handleClassName =
     powerState === NODE_POWER_STATE.PHASE_CONFLICT
       ? "border border-red-200 bg-red-400"
       : powerState === NODE_POWER_STATE.BACKFEED
         ? "border border-orange-200 bg-orange-400"
-        : isTrulyOffline
-          ? "border border-slate-500 bg-slate-600"
-          : powerState === NODE_POWER_STATE.LIVE
-          ? "border border-emerald-200 bg-emerald-400"
-          : "border border-slate-300 bg-slate-500";
-
-  const statusChipClassName = isSourceOnline
-    ? "border border-emerald-300/70 bg-emerald-500/20 text-emerald-100"
-    : "border border-slate-500 bg-slate-800/80 text-slate-300";
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "border border-amber-100 bg-amber-300"
+          : "border border-violet-300/70 bg-violet-500/70";
 
   return (
     <div className={`min-w-60 rounded-md border px-4 py-3 text-left ${shellClassName}`}>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <TransformerIcon className={`h-4 w-4 ${titleClassName}`} />
         <div className={`text-[10px] uppercase tracking-[0.2em] ${titleClassName}`}>
-          Utility Source
+          Pad Mount Transformer
         </div>
-        <span
-          className={`rounded px-1.5 py-0.5 text-[9px] uppercase tracking-[0.18em] ${statusChipClassName}`}
-        >
-          {isSourceOnline ? "Online" : "Offline"}
-        </span>
       </div>
-      <div className={`mt-1 text-sm font-semibold ${isTrulyOffline ? "text-slate-400" : "text-slate-100"}`}>
-        {data.label}
-      </div>
-      <div className={`mt-2 text-xs ${isTrulyOffline ? "text-slate-500" : "text-slate-300"}`}>
-        {data.voltage}
-      </div>
+      <div className={`mt-1 text-sm font-semibold ${labelClassName}`}>{data.label}</div>
+      <div className="mt-2 text-xs text-slate-300">{data.ratio ?? "12.47 kV / 480 V"}</div>
       <div
         className={`mt-2 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${badgeClassName}`}
       >
@@ -105,31 +111,15 @@ function UtilityNode({ data }) {
       <div className="mt-1 text-[10px] text-slate-400">
         Sources: {sourceIds.length > 0 ? sourceIds.join(", ") : "None"}
       </div>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          data.onToggleSourceOnline?.();
-        }}
-        className={`nodrag mt-2 w-full rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
-          isSourceOnline
-            ? "border-rose-300/70 bg-rose-500/20 text-rose-100"
-            : "border-emerald-300/70 bg-emerald-500/20 text-emerald-100"
-        }`}
-      >
-        {isSourceOnline ? "Kill Feed" : "Restore Feed"}
-      </button>
 
       <Handle
-        id="utility-in"
+        id="ptx-in"
         type="target"
         position={Position.Left}
         className={`h-3 w-3 ${handleClassName}`}
       />
-
       <Handle
-        id="utility-out"
+        id="ptx-out"
         type="source"
         position={Position.Right}
         className={`h-3 w-3 ${handleClassName}`}
@@ -138,4 +128,4 @@ function UtilityNode({ data }) {
   );
 }
 
-export default UtilityNode;
+export default PTXNode;
