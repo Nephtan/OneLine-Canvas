@@ -1,42 +1,36 @@
-# OneLine-Canvas Handoff (Phase 5: Expanded Yard & Active Source Control)
+# OneLine-Canvas Handoff (Phase 6: Persistence and State Sharing)
 
 ## 1. Completed Architectural Changes
-- Added active utility source control in `UtilityNode.jsx`:
-  - interactive `Kill Feed` / `Restore Feed` button,
-  - online/offline status chip,
-  - callback-driven mutation of canonical node data (`isSourceOnline`) via `App.jsx`.
-- Implemented strict utility visual precedence:
-  - `Phase Conflict` remains critical red and overrides offline dimming,
-  - `Backfeed` remains aggressive orange and overrides offline dimming,
-  - true offline dim/grey only when `isSourceOnline === false` and resolved state is `Dead`.
-- Expanded equipment library with new node types:
-  - `PTX` (`src/nodes/PTXNode.jsx`) as pass-through transformer node (`target` + `source` handles),
-  - `Load` (`src/nodes/LoadNode.jsx`) as terminal sink (`target` handles only, no source handle).
-- Updated `EquipmentPalette.jsx` to include draggable `PTX` and `Load` cards.
-- Updated `App.jsx` integration:
-  - registered new React Flow node types (`ptx`, `load`),
-  - extended drag-drop spawn whitelist and data factories for both new types,
-  - injected `onToggleSourceOnline` callback into utility render data,
-  - retained blank startup canvas and existing breaker/deletion interactions.
-- Preserved locked physics engine behavior:
-  - no traversal/propagation algorithm rewrite in `usePowerFlow` or engine math,
-  - utility online/offline changes flow through existing topology-key recalc path.
-- Extended engine unit tests (`src/engine/powerFlow.test.js`):
-  - PTX/Load downstream live-state inheritance test,
-  - PTX/Load downstream blackout test when utility is offline.
+- Added persistent graph storage in `App.jsx` using localStorage key `oneline-canvas-state`.
+- Implemented safe hydration path on app load:
+  - parses stored JSON once during initialization,
+  - validates persisted shape as `{ nodes: [], edges: [] }`,
+  - falls back to blank canvas on missing/invalid payload.
+- Added autosave lifecycle in `App.jsx`:
+  - `useEffect` watches canonical `nodes` and `edges`,
+  - serializes and writes only canonical graph state to localStorage.
+- Added file export/import/clear topology controls to `EquipmentPalette.jsx`:
+  - `Save to File` downloads `topology.json`,
+  - `Load from File` opens JSON picker and imports graph,
+  - `Clear Yard` performs destructive reset with explicit red warning styling.
+- Added import/export/clear handlers in `App.jsx`:
+  - export uses `Blob` + object URL download flow,
+  - import parses JSON and **overwrites** current `nodes`/`edges`,
+  - invalid import aborts safely with `console.error` + `alert`,
+  - clear wipes localStorage key and resets graph to zero nodes/edges.
+- Added localStorage clear guard to prevent immediate rewrite after destructive clear so key removal is preserved.
+- Preserved all existing sandbox behaviors:
+  - drag/drop equipment spawn, breaker toggle, and deletion interactions remain intact.
 
 ## 2. Current State of the Dynamic Graph Engine
-- Engine remains source-aware and topology-agnostic with states:
-  - `Dead`, `Live`, `Backfeed`, `Phase Conflict`.
-- Root-source qualification still uses `utility.data.isSourceOnline !== false`.
-- Topology key already includes utility online signature, so utility kill/restore toggles trigger immediate recomputation without engine changes.
-- PTX and Load nodes are treated as non-utility conductive graph members:
-  - they inherit power state from graph continuity,
-  - Load is UI-restricted to terminal behavior by handle configuration.
+- Physics engine math (`usePowerFlow` and traversal logic) is unchanged and still source-aware/catastrophic-state capable.
+- Engine remains fully driven by canonical React Flow `nodes`/`edges`.
+- Hydrated/imported graphs automatically feed into existing engine calculations on next render cycle without special handling.
+- Utility online/offline toggles still trigger topology-key recomputation via existing engine key logic.
 
 ## 3. Known Bugs / Unhandled Edge Cases
-- Utility online toggle is per-node UI only; no bulk control panel, scheduling, or SCADA-style command queue yet.
-- No persistence exists yet; sandbox graph resets on page reload.
-- Load termination is handle-restricted but does not yet enforce electrical directionality/protection beyond connection geometry.
-- Conflict model still assumes immediate incompatibility for multi-source overlap (no phase-angle/synchronization model).
-- Protection behavior remains visual-only (no breaker auto-trip, relay coordination, selective isolation, or fault-clearing timing).
+- Imported files are validated only for top-level shape (`nodes` and `edges` arrays); no schema versioning or deep field validation yet.
+- No multi-slot save history exists (single browser cache key + manual JSON file workflow only).
+- `Clear Yard` is destructive and immediate; no confirmation dialog or undo stack is implemented yet.
+- Sandbox state remains local-only (no remote sync, collaboration, or conflict resolution between browser sessions).
+- Protection behavior and electrical fidelity limits from prior phases still apply (visual fault model; no relay trip/coordination engine).

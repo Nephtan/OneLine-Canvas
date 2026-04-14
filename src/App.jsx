@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   addEdge,
   Background,
@@ -29,19 +29,82 @@ const edgeTypes = {
   breaker: BreakerEdge
 };
 
-function App() {
-  const initialGraph = useMemo(
-    () => ({
-      nodes: [],
-      edges: []
-    }),
-    []
+const STORAGE_KEY = "oneline-canvas-state";
+
+function isGraphStateShape(value) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    Array.isArray(value.nodes) &&
+    Array.isArray(value.edges)
   );
+}
+
+function getBlankGraph() {
+  return {
+    nodes: [],
+    edges: []
+  };
+}
+
+function readGraphStateFromStorage() {
+  if (typeof window === "undefined") {
+    return getBlankGraph();
+  }
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+
+    if (!raw) {
+      return getBlankGraph();
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!isGraphStateShape(parsed)) {
+      console.error("Invalid persisted topology shape. Falling back to blank yard.");
+      return getBlankGraph();
+    }
+
+    return parsed;
+  } catch (error) {
+    console.error("Failed to parse persisted topology. Falling back to blank yard.", error);
+    return getBlankGraph();
+  }
+}
+
+function App() {
+  const initialGraph = useMemo(() => readGraphStateFromStorage(), []);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges);
   const reactFlowInstanceRef = useRef(null);
+  const importInputRef = useRef(null);
+  const skipNextAutosaveRef = useRef(false);
   const { powerStateByNodeId, sourceIdsByNodeId, edgePowerStateByEdgeId } =
     usePowerFlow(nodes, edges);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          nodes,
+          edges
+        })
+      );
+    } catch (error) {
+      console.error("Failed to persist topology to localStorage.", error);
+    }
+  }, [nodes, edges]);
 
   const toggleUtilitySourceOnline = useCallback(
     (nodeId) => {
@@ -123,6 +186,63 @@ function App() {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
   }, []);
+
+  const onSaveToFile = useCallback(() => {
+    const topologyJson = JSON.stringify({ nodes, edges }, null, 2);
+    const topologyBlob = new Blob([topologyJson], {
+      type: "application/json"
+    });
+    const objectUrl = URL.createObjectURL(topologyBlob);
+    const anchor = document.createElement("a");
+
+    anchor.href = objectUrl;
+    anchor.download = "topology.json";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(objectUrl);
+  }, [nodes, edges]);
+
+  const onLoadFromFile = useCallback(() => {
+    importInputRef.current?.click();
+  }, []);
+
+  const onImportFileChange = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+
+      if (!file) {
+        return;
+      }
+
+      try {
+        const fileText = await file.text();
+        const parsed = JSON.parse(fileText);
+
+        if (!isGraphStateShape(parsed)) {
+          throw new Error("Imported file does not contain { nodes: [], edges: [] }.");
+        }
+
+        setNodes(parsed.nodes);
+        setEdges(parsed.edges);
+      } catch (error) {
+        console.error("Topology import failed.", error);
+        window.alert("Invalid topology file. Import aborted.");
+      }
+    },
+    [setNodes, setEdges]
+  );
+
+  const onClearYard = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
+
+    skipNextAutosaveRef.current = true;
+    setNodes([]);
+    setEdges([]);
+  }, [setNodes, setEdges]);
 
   const onDrop = useCallback(
     (event) => {
@@ -249,8 +369,21 @@ function App() {
 
   return (
     <div className="fixed inset-0 h-screen w-screen bg-slate-950 font-mono text-slate-100">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={onImportFileChange}
+      />
+
       <div className="flex h-full w-full overflow-hidden">
-        <EquipmentPalette onDragStart={onDragStart} />
+        <EquipmentPalette
+          onDragStart={onDragStart}
+          onSaveToFile={onSaveToFile}
+          onLoadFromFile={onLoadFromFile}
+          onClearYard={onClearYard}
+        />
 
         <div className="relative h-full flex-1" onDrop={onDrop} onDragOver={onDragOver}>
           <ReactFlow
@@ -286,7 +419,7 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 5 Expanded Yard & Source Control
+            OneLine-Canvas Phase 6 Persistence & State Sharing
           </div>
         </div>
       </div>
