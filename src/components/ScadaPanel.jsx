@@ -36,7 +36,15 @@ function ScadaPanel({
   edges,
   powerStateByNodeId,
   onToggleSourceOnline,
-  onResetAllBreakers
+  onResetAllBreakers,
+  hasMopBaseSnapshot,
+  isRecordingMop,
+  mopSteps,
+  mopPlaybackIndex,
+  onToggleMopRecording,
+  onMopReset,
+  onMopStepBack,
+  onMopStepForward
 }) {
   const sourceRows = useMemo(
     () =>
@@ -80,11 +88,21 @@ function ScadaPanel({
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-r border-slate-700 bg-slate-950/95 p-3">
       <div className="rounded border border-slate-700 bg-slate-900 px-3 py-3">
-        <div className="text-[10px] uppercase tracking-[0.24em] text-cyan-300/80">
-          SCADA Control Room
-        </div>
-        <div className="mt-1 text-xs text-slate-300">
-          Centralized source supervision and breaker reset controls.
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.24em] text-cyan-300/80">
+              SCADA Control Room
+            </div>
+            <div className="mt-1 text-xs text-slate-300">
+              Centralized source supervision, breaker reset, and MOP playback.
+            </div>
+          </div>
+          {isRecordingMop ? (
+            <div className="inline-flex animate-pulse items-center gap-1 rounded border border-red-400 bg-red-950/80 px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-red-100">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-300" />
+              Recording
+            </div>
+          ) : null}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] uppercase tracking-[0.16em]">
           <div className="rounded border border-slate-700 bg-slate-950 px-2 py-2">
@@ -96,6 +114,103 @@ function ScadaPanel({
             <div className="mt-1 text-base text-red-200">{trippedBreakerCount}</div>
           </div>
         </div>
+      </div>
+
+      <div className="mt-3 rounded border border-slate-700 bg-slate-900 p-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+            MOP Recorder
+          </div>
+          <button
+            type="button"
+            onClick={onToggleMopRecording}
+            className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.18em] ${
+              isRecordingMop
+                ? "border-red-400 bg-red-950/70 text-red-100"
+                : "border-slate-500 bg-slate-800 text-slate-100"
+            }`}
+          >
+            {isRecordingMop ? "Stop Recording" : "Record MOP"}
+          </button>
+        </div>
+        {isRecordingMop ? (
+          <div className="mt-2 rounded border border-red-500/60 bg-red-950/40 px-2 py-2 text-[10px] text-red-100">
+            Live actions are being captured as post-settle keyframes.
+          </div>
+        ) : (
+          <>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={onMopReset}
+                disabled={!hasMopBaseSnapshot || mopPlaybackIndex === 0}
+                className={`rounded border px-2 py-2 text-[10px] uppercase tracking-[0.16em] ${
+                  hasMopBaseSnapshot && mopPlaybackIndex > 0
+                    ? "border-slate-500 bg-slate-800 text-slate-100"
+                    : "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                }`}
+              >
+                |&lt; Reset
+              </button>
+              <button
+                type="button"
+                onClick={onMopStepBack}
+                disabled={mopPlaybackIndex === 0}
+                className={`rounded border px-2 py-2 text-[10px] uppercase tracking-[0.16em] ${
+                  mopPlaybackIndex > 0
+                    ? "border-slate-500 bg-slate-800 text-slate-100"
+                    : "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                }`}
+              >
+                &lt; Step Back
+              </button>
+              <button
+                type="button"
+                onClick={onMopStepForward}
+                disabled={mopPlaybackIndex >= mopSteps.length}
+                className={`rounded border px-2 py-2 text-[10px] uppercase tracking-[0.16em] ${
+                  mopPlaybackIndex < mopSteps.length
+                    ? "border-cyan-400/70 bg-cyan-500/15 text-cyan-100"
+                    : "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                }`}
+              >
+                Step Forward &gt;
+              </button>
+            </div>
+            <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+              Position: {mopPlaybackIndex}/{mopSteps.length}
+            </div>
+            <div className="mt-2 max-h-48 overflow-y-auto rounded border border-slate-800 bg-slate-950/80">
+              {mopSteps.length === 0 ? (
+                <div className="px-3 py-3 text-xs text-slate-500">
+                  No recorded MOP steps. Toggle Record MOP to start a scenario.
+                </div>
+              ) : (
+                <ol className="space-y-1 px-3 py-2 text-xs">
+                  {mopSteps.map((mopStep, stepIndex) => {
+                    const isApplied = stepIndex < mopPlaybackIndex;
+                    const isNext = stepIndex === mopPlaybackIndex;
+
+                    return (
+                      <li
+                        key={`${mopStep.targetId}-${stepIndex}`}
+                        className={`rounded border px-2 py-1 ${
+                          isApplied
+                            ? "border-cyan-400/60 bg-cyan-500/10 text-cyan-100"
+                            : isNext
+                              ? "border-amber-400/60 bg-amber-500/10 text-amber-100"
+                              : "border-slate-800 bg-slate-950 text-slate-300"
+                        }`}
+                      >
+                        {stepIndex + 1}. {mopStep.actionText}
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="mt-3 rounded border border-slate-700 bg-slate-900 p-2">

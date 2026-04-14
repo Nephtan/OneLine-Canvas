@@ -1,4 +1,4 @@
-# OneLine-Canvas Master Handoff (Phases 1-11)
+# OneLine-Canvas Master Handoff (Phases 1-12)
 
 ## Source Map (Historical Inputs)
 | Phase | Revision | Date | Commit Subject | Status |
@@ -14,6 +14,7 @@
 | Phase 9 | `6ae264482bbf10a9113a05493e41c88310c548f9` | `2026-04-13` | `Implement protective isolation auto-trip breakers` | Committed |
 | Phase 10 | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Implement equipment identity and synchronized source paralleling` | Committed |
 | Phase 11 | `17ed10fee00b6d88bc3cf2264ad95b46828833c9` | `2026-04-14` | `Add docked SCADA dashboard for source control and breaker reset` | Committed |
+| Phase 12 | `working-tree` | `2026-04-14` | `Implement snapshot-based MOP recorder and playback deck` | In Progress |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -203,6 +204,24 @@
   - SCADA does not yet execute scripted Sequence of Operations runs, batches, or timed failover orchestration.
   - Breaker reset is global/manual only; there is no selective reset or breaker grouping model.
 
+### Phase 12: MOP Recorder
+- Revision: `working-tree`
+- Date: `2026-04-14`
+- Subject: `Implement snapshot-based MOP recorder and playback deck`
+- Major additions:
+  - Added App-level MOP recorder state: `mopSteps`, `mopBaseSnapshot`, `isRecordingMop`, `mopPlaybackIndex`, and a pending recorded-action descriptor.
+  - Expanded localStorage and JSON import/export payloads from `{ nodes, edges }` to `{ nodes, edges, mopSteps, mopBaseSnapshot }` while keeping backward compatibility for older graph-only payloads.
+  - Added SCADA-side `Record MOP` controls, pulsing red record status, playback deck rendering, and snapshot playback buttons for `Reset`, `Step Back`, and `Step Forward`.
+  - Routed source toggles through a shared App-level callback so SCADA source actions and on-node source buttons both participate in MOP capture.
+  - Routed breaker clicks through App-level capture logic so recorded steps store the operator action text plus a post-settle canonical graph snapshot.
+- Engine-state evolution:
+  - None. `usePowerFlow` and `powerFlow.js` remain unchanged.
+  - MOP playback is a pure React state overwrite of canonical `nodes` and `edges`; the existing physics engine simply re-evaluates whatever snapshot is currently applied.
+  - Recorded keyframes are committed only after `faultedEdgeIds` returns to empty, so Phase 9 auto-trips are captured in the step snapshot instead of being truncated mid-fault.
+- Unresolved items at phase end:
+  - Playback is linear only; no branching timeline, reordering, inline editing, or timed autoplay exists yet.
+  - Snapshot playback is authoritative and may overwrite manual yard edits made after the recording was captured.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
@@ -263,7 +282,7 @@
 - Rendering architecture:
   - Simulation output is derived into render nodes/edges without mutating canonical graph state.
 - Persistence and topology portability:
-  - Local autosave/hydration plus JSON export/import for `{ nodes, edges }`.
+  - Local autosave/hydration plus JSON export/import for `{ nodes, edges, mopSteps, mopBaseSnapshot }`.
 - Big Bus interaction standard:
   - Multi-connection ergonomics standardized to continuous bus handles; permissive wiring is intentional.
 - Protective isolation:
@@ -278,6 +297,10 @@
   - A docked SCADA panel lists all root sources with label, sync group, active power state, and source online/offline status.
   - Source online/offline control can now be actuated remotely from the control-room panel using the same canonical node mutation path as on-canvas controls.
   - A global `Reset All Breakers` control resets every `tripped` breaker edge back to `open` without changing engine math.
+- Scenario recording and playback:
+  - The SCADA panel can now capture a fresh MOP recording session from a canonical base snapshot and append sequential keyframe steps after each recorded action settles.
+  - Each MOP step persists the operator intent (`TOGGLE_SOURCE` or `TOGGLE_BREAKER`), the target state, operator-friendly action text, and a deep-cloned post-settle graph snapshot.
+  - Playback controls overwrite canonical `nodes` and `edges` from the base snapshot or recorded step snapshots so the existing engine can recompute flow, backfeed, and any auto-trip side effects deterministically.
 - Tooling guardrails:
   - `package.json` now declares a Node engine policy of `^20.19.0 || >=22.12.0`.
   - `scripts/check-deps.mjs` validates Node version, manifest/lockfile parity, `DEPENDENCIES.md` parity, `node_modules` presence, and top-level npm install health.
@@ -296,6 +319,7 @@
 - SCADA interaction:
   - The control-room panel reads canonical `nodes` and `edges` only.
   - Remote source actuation and breaker reset are App-level state mutations layered on top of the existing engine output.
+  - The MOP recorder also remains App/UI-only: it records operator actions, stores canonical snapshots, and replays them by overwriting `nodes`/`edges` without duplicating any engine calculations.
 - Recompute and memoization:
   - Topology key includes node identity/type plus root-source online signatures and normalized root sync-group signatures.
   - Topology key includes edge source/target and breaker state (`open`, `closed`, `tripped`).
@@ -306,11 +330,12 @@
 - Breaker conductivity is controlled only by `edge.data.breakerState`.
 - Valid breaker states are `open`, `closed`, and `tripped`; only `closed` is conductive.
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
-- Persistence contract remains `{ nodes, edges }` with shallow import validation.
+- Persistence contract is now `{ nodes, edges, mopSteps, mopBaseSnapshot }` with backward-compatible shallow import validation at the top-level graph shape.
 - `usePowerFlow` now returns `faultedEdgeIds` in addition to node/edge power maps.
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
 - Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
 - SCADA panel must remain a pure UI controller and must not implement or duplicate physics calculations.
+- MOP playback must remain a canonical state-overwrite layer on top of React Flow state; it must not simulate clicks or fork the power engine.
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
 - Sync groups model source identity only; there is no phase-angle, frequency, voltage-matching, or breaker permissive-window simulation.
@@ -322,7 +347,7 @@
 - Import validation is shallow; deep schema/version validation for node payloads is not implemented.
 - Persistence is local-browser scoped only; no remote sync, revision history, or multi-user merge workflow exists.
 - `Clear Yard` remains destructive with no confirmation/undo stack.
-- Source controls are now available both node-local and via SCADA, but there is still no scripted SOO automation, batch sequencing, or scenario playback layer.
+- Source controls are now available both node-local and via SCADA, and Phase 12 adds linear scenario playback, but there is still no scripted SOO automation, batch editing, timeline branching, or timed autoplay layer.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 
 ## Engine Verification and Test Coverage Snapshot
@@ -345,5 +370,5 @@
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
-- No dedicated UI tests yet cover SCADA rendering, remote actuation, or global breaker reset interaction.
+- No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, remote actuation, or global breaker reset behavior.
 - Automated simulation test execution beyond dependency validation still depends on the current workspace toolchain remaining installed and healthy.

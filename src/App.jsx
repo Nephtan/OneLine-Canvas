@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addEdge,
   Background,
@@ -45,6 +45,10 @@ const edgeTypes = {
 };
 
 const STORAGE_KEY = "oneline-canvas-state";
+const MOP_ACTION_TYPE = {
+  TOGGLE_SOURCE: "TOGGLE_SOURCE",
+  TOGGLE_BREAKER: "TOGGLE_BREAKER"
+};
 
 function isGraphStateShape(value) {
   return (
@@ -55,36 +59,168 @@ function isGraphStateShape(value) {
   );
 }
 
-function getBlankGraph() {
+function getBlankAppState() {
   return {
     nodes: [],
-    edges: []
+    edges: [],
+    mopSteps: [],
+    mopBaseSnapshot: null
   };
+}
+
+function cloneGraphState(graphState) {
+  return JSON.parse(
+    JSON.stringify({
+      nodes: graphState.nodes,
+      edges: graphState.edges
+    })
+  );
+}
+
+function serializeGraphState(graphState) {
+  return JSON.stringify({
+    nodes: graphState.nodes,
+    edges: graphState.edges
+  });
+}
+
+function normalizeMopBaseSnapshot(value) {
+  if (!isGraphStateShape(value)) {
+    return null;
+  }
+
+  return cloneGraphState(normalizeGraphState(value));
+}
+
+function normalizeMopTargetState(actionType, targetState) {
+  if (actionType === MOP_ACTION_TYPE.TOGGLE_SOURCE) {
+    return targetState === true;
+  }
+
+  return targetState === BREAKER_STATE.CLOSED
+    ? BREAKER_STATE.CLOSED
+    : BREAKER_STATE.OPEN;
+}
+
+function getDefaultMopActionText(actionType, targetId, targetState) {
+  if (actionType === MOP_ACTION_TYPE.TOGGLE_SOURCE) {
+    return targetState ? `Restored ${targetId}` : `Killed ${targetId}`;
+  }
+
+  return targetState === BREAKER_STATE.CLOSED
+    ? `Closed Breaker ${targetId}`
+    : `Opened Breaker ${targetId}`;
+}
+
+function normalizeMopSteps(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((step) => {
+      if (
+        step === null ||
+        typeof step !== "object" ||
+        typeof step.targetId !== "string" ||
+        (step.actionType !== MOP_ACTION_TYPE.TOGGLE_SOURCE &&
+          step.actionType !== MOP_ACTION_TYPE.TOGGLE_BREAKER) ||
+        !isGraphStateShape(step.snapshot)
+      ) {
+        return null;
+      }
+
+      const normalizedTargetState = normalizeMopTargetState(
+        step.actionType,
+        step.targetState
+      );
+
+      return {
+        targetId: step.targetId,
+        actionType: step.actionType,
+        targetState: normalizedTargetState,
+        actionText:
+          typeof step.actionText === "string" && step.actionText.trim() !== ""
+            ? step.actionText
+            : getDefaultMopActionText(
+                step.actionType,
+                step.targetId,
+                normalizedTargetState
+              ),
+        snapshot: cloneGraphState(normalizeGraphState(step.snapshot))
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizePersistedAppState(value) {
+  if (!isGraphStateShape(value)) {
+    return getBlankAppState();
+  }
+
+  const normalizedGraph = normalizeGraphState(value);
+  const mopBaseSnapshot = normalizeMopBaseSnapshot(value.mopBaseSnapshot);
+  const mopSteps = mopBaseSnapshot ? normalizeMopSteps(value.mopSteps) : [];
+
+  return {
+    nodes: normalizedGraph.nodes,
+    edges: normalizedGraph.edges,
+    mopSteps,
+    mopBaseSnapshot
+  };
+}
+
+function deriveMopPlaybackIndex(nodes, edges, mopBaseSnapshot, mopSteps) {
+  if (!mopBaseSnapshot) {
+    return 0;
+  }
+
+  const currentGraphSignature = serializeGraphState({ nodes, edges });
+  let matchedPlaybackIndex =
+    serializeGraphState(mopBaseSnapshot) === currentGraphSignature ? 0 : -1;
+
+  mopSteps.forEach((step, stepIndex) => {
+    if (serializeGraphState(step.snapshot) === currentGraphSignature) {
+      matchedPlaybackIndex = stepIndex + 1;
+    }
+  });
+
+  return matchedPlaybackIndex >= 0 ? matchedPlaybackIndex : 0;
+}
+
+function getNextBreakerState(currentState) {
+  if (currentState === BREAKER_STATE.TRIPPED) {
+    return BREAKER_STATE.OPEN;
+  }
+
+  return currentState === BREAKER_STATE.CLOSED
+    ? BREAKER_STATE.OPEN
+    : BREAKER_STATE.CLOSED;
 }
 
 function readGraphStateFromStorage() {
   if (typeof window === "undefined") {
-    return getBlankGraph();
+    return getBlankAppState();
   }
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
 
     if (!raw) {
-      return getBlankGraph();
+      return getBlankAppState();
     }
 
     const parsed = JSON.parse(raw);
 
     if (!isGraphStateShape(parsed)) {
       console.error("Invalid persisted topology shape. Falling back to blank yard.");
-      return getBlankGraph();
+      return getBlankAppState();
     }
 
-    return normalizeGraphState(parsed);
+    return normalizePersistedAppState(parsed);
   } catch (error) {
     console.error("Failed to parse persisted topology. Falling back to blank yard.", error);
-    return getBlankGraph();
+    return getBlankAppState();
   }
 }
 
@@ -92,6 +228,18 @@ function App() {
   const initialGraph = useMemo(() => readGraphStateFromStorage(), []);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges);
+  const [mopSteps, setMopSteps] = useState(initialGraph.mopSteps);
+  const [mopBaseSnapshot, setMopBaseSnapshot] = useState(initialGraph.mopBaseSnapshot);
+  const [isRecordingMop, setIsRecordingMop] = useState(false);
+  const [mopPlaybackIndex, setMopPlaybackIndex] = useState(() =>
+    deriveMopPlaybackIndex(
+      initialGraph.nodes,
+      initialGraph.edges,
+      initialGraph.mopBaseSnapshot,
+      initialGraph.mopSteps
+    )
+  );
+  const [pendingMopAction, setPendingMopAction] = useState(null);
   const reactFlowInstanceRef = useRef(null);
   const importInputRef = useRef(null);
   const skipNextAutosaveRef = useRef(false);
@@ -118,13 +266,15 @@ function App() {
         STORAGE_KEY,
         JSON.stringify({
           nodes,
-          edges
+          edges,
+          mopSteps,
+          mopBaseSnapshot
         })
       );
     } catch (error) {
       console.error("Failed to persist topology to localStorage.", error);
     }
-  }, [nodes, edges]);
+  }, [nodes, edges, mopSteps, mopBaseSnapshot]);
 
   useEffect(() => {
     if (!faultedEdgeIds || faultedEdgeIds.length === 0) {
@@ -160,7 +310,28 @@ function App() {
     });
   }, [faultedEdgeIds, setEdges]);
 
-  const toggleRootSourceOnline = useCallback(
+  useEffect(() => {
+    if (!pendingMopAction || !mopBaseSnapshot || faultedEdgeIds.length > 0) {
+      return;
+    }
+
+    const nextMopStep = {
+      ...pendingMopAction,
+      snapshot: cloneGraphState({ nodes, edges })
+    };
+
+    setMopSteps((currentMopSteps) => currentMopSteps.concat(nextMopStep));
+    setMopPlaybackIndex((currentPlaybackIndex) => currentPlaybackIndex + 1);
+    setPendingMopAction(null);
+  }, [
+    pendingMopAction,
+    mopBaseSnapshot,
+    faultedEdgeIds,
+    nodes,
+    edges
+  ]);
+
+  const applySourceOnlineToggle = useCallback(
     (nodeId) => {
       setNodes((currentNodes) =>
         currentNodes.map((node) => {
@@ -238,6 +409,54 @@ function App() {
     [setNodes]
   );
 
+  const applyBreakerState = useCallback(
+    (edgeId, nextState) => {
+      setEdges((currentEdges) =>
+        currentEdges.map((currentEdge) => {
+          if (currentEdge.id !== edgeId) {
+            return currentEdge;
+          }
+
+          return {
+            ...currentEdge,
+            data: {
+              ...currentEdge.data,
+              breakerState: nextState
+            }
+          };
+        })
+      );
+    },
+    [setEdges]
+  );
+
+  const handleSourceToggleRequest = useCallback(
+    (nodeId) => {
+      const sourceNode = nodes.find((node) => node.id === nodeId);
+
+      if (!sourceNode || !isSourceNodeType(sourceNode.type)) {
+        return;
+      }
+
+      const sourceNodeData = normalizeNodeData(sourceNode);
+      const nextIsSourceOnline = !(sourceNodeData.isSourceOnline !== false);
+
+      if (isRecordingMop) {
+        setPendingMopAction({
+          targetId: nodeId,
+          actionType: MOP_ACTION_TYPE.TOGGLE_SOURCE,
+          targetState: nextIsSourceOnline,
+          actionText: nextIsSourceOnline
+            ? `Restored ${sourceNodeData.label}`
+            : `Killed ${sourceNodeData.label}`
+        });
+      }
+
+      applySourceOnlineToggle(nodeId);
+    },
+    [nodes, isRecordingMop, applySourceOnlineToggle]
+  );
+
   const resetAllTrippedBreakers = useCallback(() => {
     setEdges((currentEdges) => {
       let didResetAnyEdge = false;
@@ -262,6 +481,64 @@ function App() {
     });
   }, [setEdges]);
 
+  const toggleMopRecording = useCallback(() => {
+    if (isRecordingMop) {
+      setIsRecordingMop(false);
+      return;
+    }
+
+    setPendingMopAction(null);
+    setMopSteps([]);
+    setMopBaseSnapshot(cloneGraphState({ nodes, edges }));
+    setMopPlaybackIndex(0);
+    setIsRecordingMop(true);
+  }, [isRecordingMop, nodes, edges]);
+
+  const applyMopSnapshot = useCallback(
+    (snapshot, nextPlaybackIndex) => {
+      const clonedSnapshot = cloneGraphState(snapshot);
+
+      setIsRecordingMop(false);
+      setPendingMopAction(null);
+      setNodes(clonedSnapshot.nodes);
+      setEdges(clonedSnapshot.edges);
+      setMopPlaybackIndex(nextPlaybackIndex);
+    },
+    [setNodes, setEdges]
+  );
+
+  const resetMopPlayback = useCallback(() => {
+    if (!mopBaseSnapshot) {
+      return;
+    }
+
+    applyMopSnapshot(mopBaseSnapshot, 0);
+  }, [mopBaseSnapshot, applyMopSnapshot]);
+
+  const stepMopPlaybackForward = useCallback(() => {
+    if (mopPlaybackIndex >= mopSteps.length) {
+      return;
+    }
+
+    applyMopSnapshot(mopSteps[mopPlaybackIndex].snapshot, mopPlaybackIndex + 1);
+  }, [mopPlaybackIndex, mopSteps, applyMopSnapshot]);
+
+  const stepMopPlaybackBack = useCallback(() => {
+    if (mopPlaybackIndex === 0) {
+      return;
+    }
+
+    if (mopPlaybackIndex === 1) {
+      if (mopBaseSnapshot) {
+        applyMopSnapshot(mopBaseSnapshot, 0);
+      }
+
+      return;
+    }
+
+    applyMopSnapshot(mopSteps[mopPlaybackIndex - 2].snapshot, mopPlaybackIndex - 1);
+  }, [mopPlaybackIndex, mopBaseSnapshot, mopSteps, applyMopSnapshot]);
+
   const renderNodes = useMemo(
     () =>
       nodes.map((node) => ({
@@ -273,7 +550,7 @@ function App() {
           onRenameLabel: (nextLabel) => renameNodeLabel(node.id, nextLabel),
           onToggleSourceOnline:
             isSourceNodeType(node.type)
-              ? () => toggleRootSourceOnline(node.id)
+              ? () => handleSourceToggleRequest(node.id)
               : undefined,
           onChangeSyncGroup: isSourceNodeType(node.type)
             ? (nextSyncGroup) => changeNodeSyncGroup(node.id, nextSyncGroup)
@@ -285,7 +562,7 @@ function App() {
       powerStateByNodeId,
       sourceIdsByNodeId,
       renameNodeLabel,
-      toggleRootSourceOnline,
+      handleSourceToggleRequest,
       changeNodeSyncGroup
     ]
   );
@@ -332,7 +609,11 @@ function App() {
   }, []);
 
   const onSaveToFile = useCallback(() => {
-    const topologyJson = JSON.stringify({ nodes, edges }, null, 2);
+    const topologyJson = JSON.stringify(
+      { nodes, edges, mopSteps, mopBaseSnapshot },
+      null,
+      2
+    );
     const topologyBlob = new Blob([topologyJson], {
       type: "application/json"
     });
@@ -345,7 +626,7 @@ function App() {
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(objectUrl);
-  }, [nodes, edges]);
+  }, [nodes, edges, mopSteps, mopBaseSnapshot]);
 
   const onLoadFromFile = useCallback(() => {
     importInputRef.current?.click();
@@ -368,9 +649,21 @@ function App() {
           throw new Error("Imported file does not contain { nodes: [], edges: [] }.");
         }
 
-        const normalizedGraph = normalizeGraphState(parsed);
-        setNodes(normalizedGraph.nodes);
-        setEdges(normalizedGraph.edges);
+        const normalizedAppState = normalizePersistedAppState(parsed);
+        setIsRecordingMop(false);
+        setPendingMopAction(null);
+        setNodes(normalizedAppState.nodes);
+        setEdges(normalizedAppState.edges);
+        setMopSteps(normalizedAppState.mopSteps);
+        setMopBaseSnapshot(normalizedAppState.mopBaseSnapshot);
+        setMopPlaybackIndex(
+          deriveMopPlaybackIndex(
+            normalizedAppState.nodes,
+            normalizedAppState.edges,
+            normalizedAppState.mopBaseSnapshot,
+            normalizedAppState.mopSteps
+          )
+        );
       } catch (error) {
         console.error("Topology import failed.", error);
         window.alert("Invalid topology file. Import aborted.");
@@ -385,6 +678,11 @@ function App() {
     }
 
     skipNextAutosaveRef.current = true;
+    setIsRecordingMop(false);
+    setPendingMopAction(null);
+    setMopSteps([]);
+    setMopBaseSnapshot(null);
+    setMopPlaybackIndex(0);
     setNodes([]);
     setEdges([]);
   }, [setNodes, setEdges]);
@@ -438,30 +736,26 @@ function App() {
         return;
       }
 
-      setEdges((currentEdges) =>
-        currentEdges.map((currentEdge) => {
-          if (currentEdge.id !== edge.id) {
-            return currentEdge;
-          }
+      const nextState = getNextBreakerState(edge.data?.breakerState);
 
-          const nextState =
-            currentEdge.data?.breakerState === BREAKER_STATE.TRIPPED
-              ? BREAKER_STATE.OPEN
-              : currentEdge.data?.breakerState === BREAKER_STATE.CLOSED
-                ? BREAKER_STATE.OPEN
-                : BREAKER_STATE.CLOSED;
+      if (isRecordingMop) {
+        setPendingMopAction({
+          targetId: edge.id,
+          actionType: MOP_ACTION_TYPE.TOGGLE_BREAKER,
+          targetState:
+            nextState === BREAKER_STATE.CLOSED
+              ? BREAKER_STATE.CLOSED
+              : BREAKER_STATE.OPEN,
+          actionText:
+            nextState === BREAKER_STATE.CLOSED
+              ? `Closed Breaker ${edge.id}`
+              : `Opened Breaker ${edge.id}`
+        });
+      }
 
-          return {
-            ...currentEdge,
-            data: {
-              ...currentEdge.data,
-              breakerState: nextState
-            }
-          };
-        })
-      );
+      applyBreakerState(edge.id, nextState);
     },
-    [setEdges]
+    [isRecordingMop, applyBreakerState]
   );
 
   const onNodesDelete = useCallback(
@@ -517,8 +811,16 @@ function App() {
           nodes={nodes}
           edges={edges}
           powerStateByNodeId={powerStateByNodeId}
-          onToggleSourceOnline={toggleRootSourceOnline}
+          onToggleSourceOnline={handleSourceToggleRequest}
           onResetAllBreakers={resetAllTrippedBreakers}
+          hasMopBaseSnapshot={Boolean(mopBaseSnapshot)}
+          isRecordingMop={isRecordingMop}
+          mopSteps={mopSteps}
+          mopPlaybackIndex={mopPlaybackIndex}
+          onToggleMopRecording={toggleMopRecording}
+          onMopReset={resetMopPlayback}
+          onMopStepBack={stepMopPlaybackBack}
+          onMopStepForward={stepMopPlaybackForward}
         />
 
         <div className="relative h-full flex-1" onDrop={onDrop} onDragOver={onDragOver}>
@@ -555,7 +857,7 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 11 SCADA Dashboard
+            OneLine-Canvas Phase 12 MOP Recorder
           </div>
         </div>
       </div>
