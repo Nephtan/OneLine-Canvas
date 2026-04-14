@@ -5,6 +5,11 @@ import {
   normalizeTransferSwitchActiveSource,
   normalizeTransferSwitchTargetHandle
 } from "../topology/transferSwitch";
+import {
+  EDGE_TYPE,
+  isBreakerEdgeType,
+  normalizeCanvasEdgeType
+} from "../topology/edgeTypes";
 
 export const BREAKER_STATE = {
   OPEN: "open",
@@ -83,6 +88,19 @@ function edgeConductsForTransferSwitches(edge, nodeById) {
   return true;
 }
 
+function isConductiveEdge(edge, nodeById) {
+  const edgeType = normalizeCanvasEdgeType(edge.type);
+
+  if (
+    edgeType === EDGE_TYPE.BREAKER &&
+    normalizeBreakerState(edge.data?.breakerState) !== BREAKER_STATE.CLOSED
+  ) {
+    return false;
+  }
+
+  return edgeConductsForTransferSwitches(edge, nodeById);
+}
+
 export function normalizeSyncGroup(syncGroup) {
   if (typeof syncGroup !== "string") {
     return "";
@@ -156,7 +174,11 @@ export function createTopologyKey(nodes, edges) {
 
   const edgeSignature = edges
     .map((edge) => {
-      const breakerState = normalizeBreakerState(edge.data?.breakerState);
+      const edgeType = normalizeCanvasEdgeType(edge.type);
+      const breakerState =
+        edgeType === EDGE_TYPE.BREAKER
+          ? normalizeBreakerState(edge.data?.breakerState)
+          : "-";
       const sourceHandleSignature =
         typeof edge.sourceHandle === "string" ? edge.sourceHandle : "";
       const targetHandleSignature =
@@ -165,7 +187,7 @@ export function createTopologyKey(nodes, edges) {
               ? TRANSFER_SWITCH_HANDLE_ID.PRIMARY
               : edge.targetHandle)
           : "";
-      return `${edge.source}:${sourceHandleSignature}->${edge.target}:${targetHandleSignature}:${breakerState}`;
+      return `${edgeType}:${edge.source}:${sourceHandleSignature}->${edge.target}:${targetHandleSignature}:${breakerState}`;
     })
     .sort();
 
@@ -188,17 +210,11 @@ export function evaluatePowerFlow(nodes, edges) {
   }
 
   for (const edge of edges) {
-    const breakerState = normalizeBreakerState(edge.data?.breakerState);
-
-    if (breakerState !== BREAKER_STATE.CLOSED) {
-      continue;
-    }
-
     if (!validNodeIdSet.has(edge.source) || !validNodeIdSet.has(edge.target)) {
       continue;
     }
 
-    if (!edgeConductsForTransferSwitches(edge, nodeById)) {
+    if (!isConductiveEdge(edge, nodeById)) {
       continue;
     }
 
@@ -309,19 +325,19 @@ export function evaluatePowerFlow(nodes, edges) {
   const faultedEdgeIdSet = new Set();
 
   for (const edge of edges) {
-    const breakerState = normalizeBreakerState(edge.data?.breakerState);
-
     if (
-      breakerState !== BREAKER_STATE.CLOSED ||
       !validNodeIdSet.has(edge.source) ||
       !validNodeIdSet.has(edge.target) ||
-      !edgeConductsForTransferSwitches(edge, nodeById)
+      !isConductiveEdge(edge, nodeById)
     ) {
       edgePowerStateByEdgeId[edge.id] = EDGE_POWER_STATE.DE_ENERGIZED;
       continue;
     }
 
-    if (conflictNodeIdSet.has(edge.source) || conflictNodeIdSet.has(edge.target)) {
+    if (
+      isBreakerEdgeType(edge.type) &&
+      (conflictNodeIdSet.has(edge.source) || conflictNodeIdSet.has(edge.target))
+    ) {
       faultedEdgeIdSet.add(edge.id);
     }
 

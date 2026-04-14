@@ -1,3 +1,5 @@
+import { EDGE_TYPE } from "../topology/edgeTypes";
+
 const DRAG_MIME_TYPE = "application/x-oneline-equipment";
 
 function WarningIcon({ className }) {
@@ -23,7 +25,9 @@ function EquipmentPalette({
   onDragStart,
   onSaveToFile,
   onLoadFromFile,
-  onClearYard
+  onClearYard,
+  edgeDrawMode,
+  onChangeEdgeDrawMode
 }) {
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-slate-700 bg-slate-900/95 p-3">
@@ -33,6 +37,40 @@ function EquipmentPalette({
         </div>
         <div className="mt-1 text-xs text-slate-300">
           Drag gear into the yard to build topology.
+        </div>
+      </div>
+
+      <div className="mt-3 rounded border border-slate-700 bg-slate-950 p-2">
+        <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+          Connection Tool
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              onChangeEdgeDrawMode?.(EDGE_TYPE.BREAKER);
+            }}
+            className={`rounded border px-2 py-2 text-[10px] uppercase tracking-[0.16em] ${
+              edgeDrawMode === EDGE_TYPE.BREAKER
+                ? "border-amber-300/80 bg-slate-700 text-amber-100 shadow-[0_0_0_1px_rgba(250,204,21,0.22)]"
+                : "border-slate-600 bg-slate-900 text-slate-300"
+            }`}
+          >
+            -/o- Breaker
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChangeEdgeDrawMode?.(EDGE_TYPE.STANDARD);
+            }}
+            className={`rounded border px-2 py-2 text-[10px] uppercase tracking-[0.16em] ${
+              edgeDrawMode === EDGE_TYPE.STANDARD
+                ? "border-cyan-300/80 bg-slate-700 text-cyan-100 shadow-[0_0_0_1px_rgba(103,232,249,0.2)]"
+                : "border-slate-600 bg-slate-900 text-slate-300"
+            }`}
+          >
+            --- Solid Wire
+          </button>
         </div>
       </div>
 

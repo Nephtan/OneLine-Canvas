@@ -1,4 +1,4 @@
-# OneLine-Canvas Master Handoff (Phases 1-13)
+# OneLine-Canvas Master Handoff (Phases 1-14)
 
 ## Source Map (Historical Inputs)
 | Phase | Revision | Date | Commit Subject | Status |
@@ -15,7 +15,8 @@
 | Phase 10 | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Implement equipment identity and synchronized source paralleling` | Committed |
 | Phase 11 | `17ed10fee00b6d88bc3cf2264ad95b46828833c9` | `2026-04-14` | `Add docked SCADA dashboard for source control and breaker reset` | Committed |
 | Phase 12 | `working-tree` | `2026-04-14` | `Implement snapshot-based MOP recorder and playback deck` | Verified |
-| Phase 13 | `working-tree` | `2026-04-14` | `Implement intelligent ATS interlocks and MOP-aware transfer throws` | Implemented |
+| Phase 13 | `working-tree` | `2026-04-14` | `Implement intelligent ATS interlocks and MOP-aware transfer throws` | Verified |
+| Phase 14 | `working-tree` | `2026-04-14` | `Add native visual deletion controls and explicit breaker vs wire draw modes` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -240,6 +241,23 @@
   - ATS behavior is still a manual two-position selector only; no sensing, timers, source-availability logic, or automatic retransfer policy exists yet.
   - Break-before-make is modeled as pure connectivity filtering with no overlap or transfer-delay timing window.
 
+### Phase 14: Canvas Ergonomics
+- Revision: `working-tree`
+- Date: `2026-04-14`
+- Subject: `Add native visual deletion controls and explicit breaker vs wire draw modes`
+- Major additions:
+  - Added a shared top-right delete button to every custom node and routed all node deletes through React Flow's native `deleteElements()` path so attached wires are pruned safely with the parent node.
+  - Added a new `standard` custom edge renderer with an inline delete button and upgraded `breaker` edges with the same explicit wire eraser control.
+  - Added a palette-level connection tool selector that lets operators choose between `Breaker` and `Solid Wire` draw modes before dragging a new connection.
+  - Extended MOP capture so node deletes and edge deletes are recorded as snapshot keyframes with operator-facing `Deleted ...` action text.
+- Engine-state evolution:
+  - Dynamic adjacency now distinguishes `breaker` and `standard` edges: breakers conduct only when `closed`, while standard wires conduct continuously unless blocked by ATS interlocks.
+  - Topology-key invalidation now includes edge type in addition to existing endpoint, handle, breaker-state, sync-group, and ATS signatures.
+  - Conflict-driven `faultedEdgeIds` still target breakers only, so standard wires visualize energized/conflict state but are never auto-tripped.
+- Unresolved items at phase end:
+  - Visual delete controls and connection-mode ergonomics are not yet covered by automated UI tests.
+  - Keyboard deletion remains enabled, but MOP capture is only guaranteed for the new explicit delete buttons.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
@@ -331,26 +349,29 @@
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
   - Queue-based source-set propagation over dynamically built adjacency from the current canvas graph.
-  - Closed breaker edges are first filtered through ATS handle interlocks so inactive transfer-switch inputs never enter the adjacency list.
+  - Conductive edges are added to adjacency only after edge-type and ATS-handle evaluation: `breaker` edges must be `closed`, while `standard` wires conduct unless an ATS interlock blocks that branch.
 - Conflict and backfeed:
   - Multi-source overlap resolves to `Phase Conflict` only when the contributing source IDs do not all map to one shared, non-empty normalized sync group.
   - Blank sync groups are treated as unsynchronized/unknown and never safely parallel.
   - Root fed by synchronized foreign sources without its own source ID resolves to `Backfeed`.
 - Protection feedback:
-  - Conflict evaluation emits a deterministic fault-hit list of closed breakers connected to conflicted nodes.
+  - Conflict evaluation emits a deterministic fault-hit list of closed breaker edges connected to conflicted nodes.
   - The hit list is consumed by `App.jsx` to trip breakers and clear active faults in the next recompute.
 - SCADA interaction:
   - The control-room panel reads canonical `nodes` and `edges` only.
   - Remote source actuation and breaker reset are App-level state mutations layered on top of the existing engine output.
   - The MOP recorder also remains App/UI-only: it records operator actions, stores canonical snapshots, and replays them by overwriting `nodes`/`edges` without duplicating any engine calculations.
+- Canvas ergonomics:
+  - Node and edge deletion now flows through native React Flow `deleteElements()` so topology pruning invalidates the graph naturally without manual dangling-edge cleanup logic.
+  - New user-drawn connections always carry an explicit custom edge type (`breaker` or `standard`); React Flow fallback edges are no longer part of the supported topology contract.
 - Recompute and memoization:
   - Topology key includes node identity/type plus root-source online signatures, normalized root sync-group signatures, and transfer-switch `activeSource`.
-  - Topology key includes edge source/target, source-handle/target-handle IDs, and breaker state (`open`, `closed`, `tripped`).
+  - Topology key includes edge type, source/target, source-handle/target-handle IDs, and breaker state (`open`, `closed`, `tripped`) where applicable.
   - Position-only drags and label-only renames do not invalidate traversal cache.
 
 ### Locked Behavioral Contracts for Implementers
 - Topology source of truth is always live React Flow `nodes`/`edges`; no hardcoded adjacency is permitted.
-- Breaker conductivity is controlled only by `edge.data.breakerState`.
+- Edge conductivity is controlled by normalized edge type plus edge data: `breaker` edges use `edge.data.breakerState`, while `standard` edges are always conductive unless blocked by ATS logic.
 - Valid breaker states are `open`, `closed`, and `tripped`; only `closed` is conductive.
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
 - Persistence contract is now `{ nodes, edges, mopSteps, mopBaseSnapshot }` with backward-compatible shallow import validation at the top-level graph shape.
@@ -361,7 +382,7 @@
 - ATS inactive feeder edges must behave exactly like open branches: non-conductive, `de-energized`, and excluded from conflict/trip evaluation.
 - SCADA panel must remain a pure UI controller and must not implement or duplicate physics calculations.
 - MOP playback must remain a canonical state-overwrite layer on top of React Flow state; it must not simulate clicks or fork the power engine.
-- MOP actions now include ATS throws in addition to source toggles and breaker toggles.
+- MOP actions now include ATS throws plus explicit node/edge delete keyframes in addition to source toggles and breaker toggles.
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
 - Sync groups model source identity only; there is no phase-angle, frequency, voltage-matching, or breaker permissive-window simulation.
@@ -376,11 +397,13 @@
 - Source controls are now available both node-local and via SCADA, and Phase 12 adds linear scenario playback, but there is still no scripted SOO automation, batch editing, timeline branching, or timed autoplay layer.
 - ATS nodes now prevent primary/emergency source paralleling internally, but they do not yet implement automatic transfer, source-fail sensing, permissive timers, or neutral-position logic.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
+- Visual delete controls and connection draw-mode ergonomics are now present, but there is still no automated UI coverage for these operator workflows.
 
 ## Engine Verification and Test Coverage Snapshot
 
 ### Existing Engine Test Coverage (`src/engine/powerFlow.test.js`)
 - Continuity and topology-key behavior for open/closed breaker paths.
+- Standard-wire continuity, mixed breaker/wire corridors, and edge-type topology-key invalidation.
 - Source aggregation with explicit assertions for `Backfeed` and `Phase Conflict`.
 - Sync-group-aware conflict resolution for same-group parallel, blank/mixed-group conflict, and normalization behavior.
 - Edge power-state mapping (`de-energized`, `energized`, `phase-conflict`).
@@ -389,7 +412,7 @@
 - PTX/load downstream propagation and utility-offline blackout behavior.
 - Generator root propagation, generator-offline behavior, utility+generator tie conflict, and generator topology-key invalidation.
 - Root sync-group topology-key invalidation and label-only cache stability.
-- End-to-end chain propagation through `generator -> switchboard -> transferSwitch -> mechanical`.
+- ATS interlock behavior on both breaker and standard-wire feeders plus end-to-end chain propagation through `generator -> switchboard -> transferSwitch -> mechanical`.
 
 ### Current Validation Gaps
 - No engine model/tests for synchronization permissives beyond shared sync-group identity (phase-angle drift, frequency slip, or voltage windows).
@@ -397,5 +420,5 @@
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
-- No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, or global breaker reset behavior.
+- No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, delete-button workflows, or the breaker vs solid-wire connection tool.
 - Automated simulation test execution beyond dependency validation still depends on the current workspace toolchain remaining installed and healthy.

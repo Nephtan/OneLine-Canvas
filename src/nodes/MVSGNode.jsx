@@ -1,6 +1,7 @@
 import { Handle, Position } from "@xyflow/react";
 import { NODE_POWER_STATE } from "../engine/powerFlow";
 import InlineLabelEditor from "../components/InlineLabelEditor";
+import NodeDeleteButton from "../components/NodeDeleteButton";
 
 function WarningIcon({ className }) {
   return (
@@ -72,10 +73,13 @@ function MVSGNode({ data }) {
 
   return (
     <div className={`min-w-60 rounded-md border px-4 py-3 text-left ${shellClassName}`}>
-      <div
-        className={`text-[10px] uppercase tracking-[0.2em] ${titleClassName}`}
-      >
-        MV Switchgear
+      <div className="flex items-center justify-between gap-2">
+        <div
+          className={`text-[10px] uppercase tracking-[0.2em] ${titleClassName}`}
+        >
+          MV Switchgear
+        </div>
+        <NodeDeleteButton onDelete={data.onDeleteNode} title={`Delete ${data.label}`} />
       </div>
       <div className="mt-1">
         <InlineLabelEditor

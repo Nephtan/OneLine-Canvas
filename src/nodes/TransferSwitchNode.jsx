@@ -1,6 +1,7 @@
 import { Handle, Position } from "@xyflow/react";
 import { NODE_POWER_STATE } from "../engine/powerFlow";
 import InlineLabelEditor from "../components/InlineLabelEditor";
+import NodeDeleteButton from "../components/NodeDeleteButton";
 import {
   TRANSFER_SWITCH_ACTIVE_SOURCE,
   TRANSFER_SWITCH_HANDLE_ID,
@@ -128,11 +129,14 @@ function TransferSwitchNode({ data }) {
 
   return (
     <div className={`min-w-64 rounded-md border px-4 py-4 text-left ${shellClassName}`}>
-      <div className="flex items-center gap-2">
-        <TransferIcon className={`h-4 w-4 ${titleClassName}`} />
-        <div className={`text-[10px] uppercase tracking-[0.2em] ${titleClassName}`}>
-          Transfer Switch
+      <div className="flex items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-2">
+          <TransferIcon className={`h-4 w-4 ${titleClassName}`} />
+          <div className={`text-[10px] uppercase tracking-[0.2em] ${titleClassName}`}>
+            Transfer Switch
+          </div>
         </div>
+        <NodeDeleteButton onDelete={data.onDeleteNode} title={`Delete ${data.label}`} />
       </div>
       <div className="mt-1">
         <InlineLabelEditor

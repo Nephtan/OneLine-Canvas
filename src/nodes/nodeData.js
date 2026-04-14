@@ -5,6 +5,7 @@ import {
   normalizeTransferSwitchActiveSource,
   normalizeTransferSwitchTargetHandle
 } from "../topology/transferSwitch";
+import { normalizeCanvasEdgeType } from "../topology/edgeTypes";
 
 function isSourceNodeType(nodeType) {
   return nodeType === "utility" || nodeType === "generator";
@@ -112,21 +113,25 @@ export function normalizeGraphState(graph) {
     nodes: normalizedNodes,
     edges: graph.edges.map((edge) => {
       const targetNode = nodeById.get(edge.target);
+      const normalizedEdge = {
+        ...edge,
+        type: normalizeCanvasEdgeType(edge.type)
+      };
 
       if (!isTransferSwitchNodeType(targetNode?.type)) {
-        return edge;
+        return normalizedEdge;
       }
 
       const normalizedTargetHandle = normalizeTransferSwitchTargetHandle(
-        edge.targetHandle
+        normalizedEdge.targetHandle
       );
 
-      if (edge.targetHandle === normalizedTargetHandle) {
-        return edge;
+      if (normalizedEdge.targetHandle === normalizedTargetHandle) {
+        return normalizedEdge;
       }
 
       return {
-        ...edge,
+        ...normalizedEdge,
         targetHandle: normalizedTargetHandle
       };
     })

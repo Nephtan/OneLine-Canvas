@@ -10,6 +10,7 @@ import {
   TRANSFER_SWITCH_ACTIVE_SOURCE,
   TRANSFER_SWITCH_HANDLE_ID
 } from "../topology/transferSwitch";
+import { EDGE_TYPE as CANVAS_EDGE_TYPE } from "../topology/edgeTypes";
 
 function utilityNode(id, options = {}) {
   return {
@@ -100,11 +101,22 @@ function mechanicalNode(id) {
 function breakerEdge(id, source, target, breakerState, handleOptions = {}) {
   return {
     id,
-    type: "breaker",
+    type: CANVAS_EDGE_TYPE.BREAKER,
     source,
     target,
     ...handleOptions,
     data: { breakerState }
+  };
+}
+
+function standardEdge(id, source, target, handleOptions = {}) {
+  return {
+    id,
+    type: CANVAS_EDGE_TYPE.STANDARD,
+    source,
+    target,
+    ...handleOptions,
+    data: {}
   };
 }
 
@@ -117,6 +129,18 @@ describe("evaluatePowerFlow", () => {
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(sourceIdsByNodeId["mvsg-a"]).toEqual(["utility-a"]);
+  });
+
+  it("conducts a standard wire and energizes downstream gear", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a")];
+    const edges = [standardEdge("wire-1", "utility-a", "mvsg-a")];
+    const { powerStateByNodeId, edgePowerStateByEdgeId, sourceIdsByNodeId } =
+      evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["mvsg-a"]).toEqual(["utility-a"]);
+    expect(edgePowerStateByEdgeId["wire-1"]).toBe(EDGE_POWER_STATE.ENERGIZED);
   });
 
   it("keeps two independent feeders healthy with an open tie", () => {
@@ -347,6 +371,20 @@ describe("evaluatePowerFlow", () => {
     expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.DEAD);
   });
 
+  it("lets standard wires and breaker edges coexist without changing breaker semantics", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a"), loadNode("load-a")];
+    const edges = [
+      standardEdge("wire-1", "utility-a", "mvsg-a"),
+      breakerEdge("breaker-1", "mvsg-a", "load-a", BREAKER_STATE.OPEN)
+    ];
+    const { powerStateByNodeId, edgePowerStateByEdgeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(edgePowerStateByEdgeId["wire-1"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(edgePowerStateByEdgeId["breaker-1"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+  });
+
   it("energizes PTX and Load in a downstream chain from one utility", () => {
     const nodes = [
       utilityNode("utility-a"),
@@ -551,6 +589,45 @@ describe("evaluatePowerFlow", () => {
     expect(faultedEdgeIds).toEqual([]);
   });
 
+  it("still blocks the inactive ATS feeder when it is a standard wire", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      generatorNode("gen-a", { syncGroup: "GRID-B" }),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+      }),
+      mechanicalNode("fcw-a")
+    ];
+    const edges = [
+      standardEdge("primary-wire", "utility-a", "ats-a", {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      breakerEdge("emergency-breaker", "gen-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.EMERGENCY
+      }),
+      standardEdge("load-wire", "ats-a", "fcw-a", {
+        sourceHandle: TRANSFER_SWITCH_HANDLE_ID.OUTPUT
+      })
+    ];
+    const {
+      powerStateByNodeId,
+      edgePowerStateByEdgeId,
+      sourceIdsByNodeId,
+      faultedEdgeIds
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ats-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["fcw-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["fcw-a"]).toEqual(["gen-a"]);
+    expect(edgePowerStateByEdgeId["primary-wire"]).toBe(
+      EDGE_POWER_STATE.DE_ENERGIZED
+    );
+    expect(edgePowerStateByEdgeId["emergency-breaker"]).toBe(
+      EDGE_POWER_STATE.ENERGIZED
+    );
+    expect(faultedEdgeIds).toEqual([]);
+  });
+
   it("flags phase conflict when utility and generator are cross-tied", () => {
     const nodes = [
       utilityNode("utility-a"),
@@ -714,5 +791,17 @@ describe("createTopologyKey", () => {
     const keyEmergency = createTopologyKey(nodes, edgesEmergency);
 
     expect(keyPrimary).not.toBe(keyEmergency);
+  });
+
+  it("changes when an edge type changes from breaker to standard", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a")];
+    const breakerEdges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED)
+    ];
+    const standardEdges = [standardEdge("e1", "utility-a", "mvsg-a")];
+    const breakerKey = createTopologyKey(nodes, breakerEdges);
+    const standardKey = createTopologyKey(nodes, standardEdges);
+
+    expect(breakerKey).not.toBe(standardKey);
   });
 });

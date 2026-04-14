@@ -18,6 +18,7 @@ import SwitchboardNode from "./nodes/SwitchboardNode";
 import TransferSwitchNode from "./nodes/TransferSwitchNode";
 import MechanicalNode from "./nodes/MechanicalNode";
 import BreakerEdge from "./edges/BreakerEdge";
+import StandardEdge from "./edges/StandardEdge";
 import usePowerFlow from "./hooks/usePowerFlow";
 import { BREAKER_STATE, EDGE_POWER_STATE } from "./engine/powerFlow";
 import EquipmentPalette, { DRAG_MIME_TYPE } from "./components/EquipmentPalette";
@@ -33,6 +34,10 @@ import {
   formatTransferSwitchActiveSource,
   normalizeTransferSwitchActiveSource
 } from "./topology/transferSwitch";
+import {
+  EDGE_TYPE,
+  normalizeCanvasEdgeType
+} from "./topology/edgeTypes";
 
 const nodeTypes = {
   utility: UtilityNode,
@@ -46,14 +51,17 @@ const nodeTypes = {
 };
 
 const edgeTypes = {
-  breaker: BreakerEdge
+  breaker: BreakerEdge,
+  standard: StandardEdge
 };
 
 const STORAGE_KEY = "oneline-canvas-state";
 const MOP_ACTION_TYPE = {
   TOGGLE_SOURCE: "TOGGLE_SOURCE",
   TOGGLE_BREAKER: "TOGGLE_BREAKER",
-  THROW_TRANSFER_SWITCH: "THROW_TRANSFER_SWITCH"
+  THROW_TRANSFER_SWITCH: "THROW_TRANSFER_SWITCH",
+  DELETE_NODE: "DELETE_NODE",
+  DELETE_EDGE: "DELETE_EDGE"
 };
 
 function isGraphStateShape(value) {
@@ -107,6 +115,13 @@ function normalizeMopTargetState(actionType, targetState) {
     return normalizeTransferSwitchActiveSource(targetState);
   }
 
+  if (
+    actionType === MOP_ACTION_TYPE.DELETE_NODE ||
+    actionType === MOP_ACTION_TYPE.DELETE_EDGE
+  ) {
+    return "deleted";
+  }
+
   return targetState === BREAKER_STATE.CLOSED
     ? BREAKER_STATE.CLOSED
     : BREAKER_STATE.OPEN;
@@ -119,6 +134,13 @@ function getDefaultMopActionText(actionType, targetId, targetState) {
 
   if (actionType === MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH) {
     return `Transfer ${targetId} to ${formatTransferSwitchActiveSource(targetState)}`;
+  }
+
+  if (
+    actionType === MOP_ACTION_TYPE.DELETE_NODE ||
+    actionType === MOP_ACTION_TYPE.DELETE_EDGE
+  ) {
+    return `Deleted ${targetId}`;
   }
 
   return targetState === BREAKER_STATE.CLOSED
@@ -139,7 +161,9 @@ function normalizeMopSteps(value) {
         typeof step.targetId !== "string" ||
         (step.actionType !== MOP_ACTION_TYPE.TOGGLE_SOURCE &&
           step.actionType !== MOP_ACTION_TYPE.TOGGLE_BREAKER &&
-          step.actionType !== MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH) ||
+          step.actionType !== MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH &&
+          step.actionType !== MOP_ACTION_TYPE.DELETE_NODE &&
+          step.actionType !== MOP_ACTION_TYPE.DELETE_EDGE) ||
         !isGraphStateShape(step.snapshot)
       ) {
         return null;
@@ -246,6 +270,7 @@ function App() {
   const [mopSteps, setMopSteps] = useState(initialGraph.mopSteps);
   const [mopBaseSnapshot, setMopBaseSnapshot] = useState(initialGraph.mopBaseSnapshot);
   const [isRecordingMop, setIsRecordingMop] = useState(false);
+  const [edgeDrawMode, setEdgeDrawMode] = useState(EDGE_TYPE.BREAKER);
   const [mopPlaybackIndex, setMopPlaybackIndex] = useState(() =>
     deriveMopPlaybackIndex(
       initialGraph.nodes,
@@ -618,6 +643,71 @@ function App() {
     applyMopSnapshot(mopSteps[mopPlaybackIndex - 2].snapshot, mopPlaybackIndex - 1);
   }, [mopPlaybackIndex, mopBaseSnapshot, mopSteps, applyMopSnapshot]);
 
+  const handleDeleteNodeRequest = useCallback(
+    async (nodeId) => {
+      const reactFlowInstance = reactFlowInstanceRef.current;
+      const nodeToDelete = nodes.find((node) => node.id === nodeId);
+
+      if (!reactFlowInstance?.deleteElements || !nodeToDelete) {
+        return;
+      }
+
+      const nodeData = normalizeNodeData(nodeToDelete);
+      const { deletedNodes = [] } = await reactFlowInstance.deleteElements({
+        nodes: [nodeToDelete],
+        edges: []
+      });
+
+      if (deletedNodes.length === 0) {
+        return;
+      }
+
+      if (isRecordingMop) {
+        setPendingMopAction({
+          targetId: nodeId,
+          actionType: MOP_ACTION_TYPE.DELETE_NODE,
+          targetState: "deleted",
+          actionText: `Deleted ${nodeData.label}`
+        });
+      }
+    },
+    [nodes, isRecordingMop]
+  );
+
+  const handleDeleteEdgeRequest = useCallback(
+    async (edgeId) => {
+      const reactFlowInstance = reactFlowInstanceRef.current;
+      const edgeToDelete = edges.find((edge) => edge.id === edgeId);
+
+      if (!reactFlowInstance?.deleteElements || !edgeToDelete) {
+        return;
+      }
+
+      const edgeType = normalizeCanvasEdgeType(edgeToDelete.type);
+      const { deletedEdges = [] } = await reactFlowInstance.deleteElements({
+        nodes: [],
+        edges: [edgeToDelete]
+      });
+
+      if (deletedEdges.length === 0) {
+        return;
+      }
+
+      if (isRecordingMop) {
+        setPendingMopAction({
+          targetId: edgeId,
+          actionType: MOP_ACTION_TYPE.DELETE_EDGE,
+          targetState: "deleted",
+          actionText:
+            edgeType === EDGE_TYPE.STANDARD
+              ? `Deleted Wire ${edgeId}`
+              : `Deleted Breaker ${edgeId}`
+        });
+      }
+    },
+    [edges, isRecordingMop]
+  );
+
   const renderNodes = useMemo(
     () =>
       nodes.map((node) => ({
@@ -637,7 +727,10 @@ function App() {
           onChangeActiveSource: isTransferSwitchNodeType(node.type)
             ? (nextActiveSource) =>
                 handleTransferSwitchThrowRequest(node.id, nextActiveSource)
-            : undefined
+            : undefined,
+          onDeleteNode: () => {
+            void handleDeleteNodeRequest(node.id);
+          }
         }
       })),
     [
@@ -647,7 +740,8 @@ function App() {
       renameNodeLabel,
       handleSourceToggleRequest,
       changeNodeSyncGroup,
-      handleTransferSwitchThrowRequest
+      handleTransferSwitchThrowRequest,
+      handleDeleteNodeRequest
     ]
   );
 
@@ -658,28 +752,35 @@ function App() {
         data: {
           ...edge.data,
           powerState:
-            edgePowerStateByEdgeId[edge.id] ?? EDGE_POWER_STATE.DE_ENERGIZED
+            edgePowerStateByEdgeId[edge.id] ?? EDGE_POWER_STATE.DE_ENERGIZED,
+          onDeleteEdge: () => {
+            void handleDeleteEdgeRequest(edge.id);
+          }
         }
       })),
-    [edges, edgePowerStateByEdgeId]
+    [edges, edgePowerStateByEdgeId, handleDeleteEdgeRequest]
   );
 
   const onConnect = useCallback(
     (connection) => {
+      const nextEdgeType = edgeDrawMode;
       setEdges((currentEdges) =>
         addEdge(
           {
             ...connection,
-            type: "breaker",
-            data: {
-              breakerState: BREAKER_STATE.OPEN
-            }
+            type: nextEdgeType,
+            data:
+              nextEdgeType === EDGE_TYPE.BREAKER
+                ? {
+                    breakerState: BREAKER_STATE.OPEN
+                  }
+                : {}
           },
           currentEdges
         )
       );
     },
-    [setEdges]
+    [edgeDrawMode, setEdges]
   );
 
   const onDragStart = useCallback((event, nodeType) => {
@@ -842,36 +943,17 @@ function App() {
     [isRecordingMop, applyBreakerState]
   );
 
-  const onNodesDelete = useCallback(
-    (deletedNodes) => {
-      const deletedNodeIdSet = new Set(deletedNodes.map((node) => node.id));
-
-      setEdges((currentEdges) =>
-        currentEdges.filter(
-          (edge) =>
-            !deletedNodeIdSet.has(edge.source) && !deletedNodeIdSet.has(edge.target)
-        )
-      );
-    },
-    [setEdges]
-  );
-
-  const onEdgesDelete = useCallback(
-    (deletedEdges) => {
-      const deletedEdgeIdSet = new Set(deletedEdges.map((edge) => edge.id));
-
-      setEdges((currentEdges) =>
-        currentEdges.filter((edge) => !deletedEdgeIdSet.has(edge.id))
-      );
-    },
-    [setEdges]
-  );
-
   const defaultEdgeOptions = useMemo(
     () => ({
-      type: "breaker"
+      type: edgeDrawMode,
+      data:
+        edgeDrawMode === EDGE_TYPE.BREAKER
+          ? {
+              breakerState: BREAKER_STATE.OPEN
+            }
+          : {}
     }),
-    []
+    [edgeDrawMode]
   );
 
   return (
@@ -890,6 +972,8 @@ function App() {
           onSaveToFile={onSaveToFile}
           onLoadFromFile={onLoadFromFile}
           onClearYard={onClearYard}
+          edgeDrawMode={edgeDrawMode}
+          onChangeEdgeDrawMode={setEdgeDrawMode}
         />
         <ScadaPanel
           nodes={nodes}
@@ -915,8 +999,6 @@ function App() {
             edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
-            onNodesDelete={onNodesDelete}
-            onEdgesDelete={onEdgesDelete}
             onConnect={onConnect}
             onEdgeClick={onEdgeClick}
             onInit={(instance) => {
@@ -941,7 +1023,7 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 13 Intelligent Transfer Switches
+            OneLine-Canvas Phase 14 Canvas Ergonomics
           </div>
         </div>
       </div>

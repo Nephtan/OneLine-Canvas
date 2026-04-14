@@ -1,6 +1,7 @@
 import { Handle, Position } from "@xyflow/react";
 import { NODE_POWER_STATE } from "../engine/powerFlow";
 import InlineLabelEditor from "../components/InlineLabelEditor";
+import NodeDeleteButton from "../components/NodeDeleteButton";
 
 function WarningIcon({ className }) {
   return (
@@ -101,11 +102,14 @@ function GeneratorNode({ data }) {
             Generator Source
           </div>
         </div>
-        <span
-          className={`rounded px-1.5 py-0.5 text-[9px] uppercase tracking-[0.18em] ${statusChipClassName}`}
-        >
-          {isSourceOnline ? "Online" : "Offline"}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`rounded px-1.5 py-0.5 text-[9px] uppercase tracking-[0.18em] ${statusChipClassName}`}
+          >
+            {isSourceOnline ? "Online" : "Offline"}
+          </span>
+          <NodeDeleteButton onDelete={data.onDeleteNode} title={`Delete ${data.label}`} />
+        </div>
       </div>
       <div className="mt-1">
         <InlineLabelEditor

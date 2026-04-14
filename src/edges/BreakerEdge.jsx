@@ -1,4 +1,5 @@
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from "@xyflow/react";
+import EdgeDeleteButton from "../components/EdgeDeleteButton";
 import {
   BREAKER_STATE,
   EDGE_POWER_STATE,
@@ -102,9 +103,19 @@ function BreakerEdge({
       <EdgeLabelRenderer>
         <div
           style={{ left: `${labelX}px`, top: `${labelY}px` }}
-          className={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${labelClassName}`}
+          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
         >
-          {edgeLabel}
+          <div className="flex items-center gap-2">
+            <div
+              className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${labelClassName}`}
+            >
+              {edgeLabel}
+            </div>
+            <EdgeDeleteButton
+              title={`Delete breaker ${id}`}
+              onDelete={data?.onDeleteEdge}
+            />
+          </div>
         </div>
       </EdgeLabelRenderer>
     </>
