@@ -7,6 +7,8 @@ function usePowerFlow(nodes, edges) {
     topologyKey: null,
     result: {
       powerStateByNodeId: {},
+      sourceIdsByNodeId: {},
+      edgePowerStateByEdgeId: {},
       adjacencyByNodeId: {}
     }
   });

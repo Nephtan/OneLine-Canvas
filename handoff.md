@@ -1,36 +1,58 @@
-# OneLine-Canvas Handoff (Phase 2: Dynamic Power Propagation)
+# OneLine-Canvas Handoff (Phase 3: Catastrophic Failure Detection)
 
 ## 1. Completed Architectural Changes
-- Added custom `breaker` edge type (`src/edges/BreakerEdge.jsx`) with click-toggle behavior through `onEdgeClick` in `App.jsx`.
-- Standardized breaker state model as `edge.data.breakerState` with default `open` on `onConnect`.
-- Implemented visual breaker state rendering:
-  - `open`: dashed slate conductor.
-  - `closed`: solid energized yellow conductor with glow.
-- Added `usePowerFlow` hook (`src/hooks/usePowerFlow.js`) with topology-key caching and ref memoization so traversal runs only when power-relevant topology changes.
-- Added power-flow engine module (`src/engine/powerFlow.js`) that:
-  - dynamically builds adjacency from current nodes/edges,
-  - treats `closed` breakers as bi-directional copper continuity,
-  - resolves node state to `Live` or `Dead` from all utility roots.
-- Updated node rendering pipeline in `App.jsx` to derive `renderNodes` with injected `data.powerState` (no `setNodes` feedback loop for simulation painting).
-- Updated `MVSGNode` visuals to react to state:
-  - `Live`: energized yellow border/glow and live badge.
-  - `Dead`: dark slate styling.
-- Added engine-only unit tests (`src/engine/powerFlow.test.js`) for continuity and topology-key behavior.
+- Upgraded `src/engine/powerFlow.js` from boolean continuity to source-aware propagation:
+  - each node now tracks aggregated utility source IDs reaching it,
+  - traversal uses queue-based set union across closed, bi-directional breakers,
+  - node states now resolve as `Dead`, `Live`, `Backfeed`, or `Phase Conflict`.
+- Implemented state precedence for utility nodes:
+  - utility + multiple sources => `Phase Conflict`,
+  - utility + single non-self source => `Backfeed`,
+  - utility + only self source => `Live`,
+  - no source => `Dead`.
+- Added per-edge power state computation (`edgePowerStateByEdgeId`) in engine:
+  - `de-energized`, `energized`, `phase-conflict`.
+- Expanded `usePowerFlow` output and cache shape to expose:
+  - `powerStateByNodeId`,
+  - `sourceIdsByNodeId`,
+  - `edgePowerStateByEdgeId`,
+  - `adjacencyByNodeId` (debug view).
+- Updated `App.jsx` rendering pipeline:
+  - derives `renderNodes` with `powerState` + `sourceIds`,
+  - derives `renderEdges` with computed edge power state,
+  - keeps canonical node/edge state untouched by simulation paint logic.
+- Updated the hardcoded startup topology in `App.jsx` for immediate conflict testing:
+  - two independent live utility feeds,
+  - multiple MVSG buses,
+  - closed feeder breakers,
+  - one normally open tie-breaker between live sections.
+- Updated node visuals in `UtilityNode.jsx` and `MVSGNode.jsx`:
+  - `Phase Conflict`: pulsing red fault presentation + warning glyph,
+  - `Backfeed`: distinct orange warning presentation + warning glyph,
+  - `Live` and `Dead` states preserved as distinct normal/idle visuals.
+- Updated breaker conductor visuals in `BreakerEdge.jsx`:
+  - open dashed slate,
+  - closed energized yellow,
+  - closed conflict corridor critical red with heavy glow.
+- Extended engine-only unit tests in `src/engine/powerFlow.test.js` to cover source aggregation, conflict, backfeed, edge-state mapping, and topology-key behavior.
 
 ## 2. Current State of the Dynamic Graph Engine
-- Engine is now dynamic and topology-agnostic for **basic continuity**:
-  - Utility nodes (`type: utility`) are root sources.
-  - Only closed breakers are conductive.
-  - Continuity is bi-directional across each closed breaker.
-  - Reachable nodes are `Live`; unreachable nodes are `Dead`.
-- Recalculation is constrained by a deterministic topology key built from:
-  - node `id` + `type`,
-  - edge `source` + `target` + `breakerState`.
-- Position-only node changes (dragging) do not invalidate the topology key, preventing unnecessary traversal recomputation.
+- Engine is now topology-agnostic and source-resolved:
+  - roots are utility nodes with `data.isSourceOnline !== false`,
+  - connectivity is built dynamically from current `@xyflow/react` nodes/edges,
+  - closed breakers are modeled as bi-directional conductive paths.
+- Node output now represents operational and catastrophic states:
+  - `Dead`, `Live`, `Backfeed`, `Phase Conflict`.
+- Edge output now represents conductor condition:
+  - `de-energized`, `energized`, `phase-conflict`.
+- Recompute guard remains deterministic:
+  - topology key includes node identity/type plus utility online status,
+  - topology key includes edge source/target plus breaker state,
+  - node drag/position-only changes do not trigger traversal recomputation.
 
 ## 3. Known Bugs / Unhandled Edge Cases
-- `Backfeed` logic is not implemented yet.
-- `Phase Conflict` logic is not implemented yet.
-- Source synchronization and multi-source conflict detection are not implemented yet.
-- Breaker semantics beyond binary open/closed (trip state, protection timing, lockout/tagout) are not implemented yet.
-- Node creation UI/palette is still not implemented; current sandbox still starts with a fixed initial pair for validation.
+- Conflict model currently treats any multi-source overlap as immediate phase conflict; no utility synchronization or phase-angle compatibility model exists yet.
+- Fault containment/protection behavior is not modeled (no breaker trip, relay coordination, arc-flash clearing time, or zone isolation).
+- Backfeed is state-classified but does not yet drive automatic protective actions or lockout behavior.
+- Advanced component semantics are not implemented yet (transformer vector groups, normally-closed protection relays, transfer schemes, reclosers).
+- Node creation palette/drag-and-drop equipment library is still not implemented; startup topology remains hardcoded for verification.

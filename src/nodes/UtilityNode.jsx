@@ -1,32 +1,99 @@
 import { Handle, Position } from "@xyflow/react";
+import { NODE_POWER_STATE } from "../engine/powerFlow";
+
+function WarningIcon({ className }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 3.5 2.8 19.8h18.4L12 3.5Zm0 5.4v5.4m0 3.2h.01"
+      />
+    </svg>
+  );
+}
 
 function UtilityNode({ data }) {
-  const isLive = data.powerState === "Live";
+  const powerState = data.powerState ?? NODE_POWER_STATE.DEAD;
+  const sourceIds = data.sourceIds ?? [];
+
+  const shellClassName =
+    powerState === NODE_POWER_STATE.PHASE_CONFLICT
+      ? "border-red-500 bg-red-900/50 shadow-[0_0_0_1px_rgba(248,113,113,0.45),0_0_20px_rgba(239,68,68,0.45)] animate-pulse"
+      : powerState === NODE_POWER_STATE.BACKFEED
+        ? "border-orange-500 bg-orange-950/40 shadow-[0_0_0_1px_rgba(251,146,60,0.3),0_0_16px_rgba(249,115,22,0.35)]"
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "border-emerald-500/80 bg-slate-900 shadow-[0_0_0_1px_rgba(52,211,153,0.2),0_0_14px_rgba(16,185,129,0.24)]"
+          : "border-slate-600 bg-slate-900 shadow-lg shadow-slate-950/70";
+
+  const titleClassName =
+    powerState === NODE_POWER_STATE.PHASE_CONFLICT
+      ? "text-red-200"
+      : powerState === NODE_POWER_STATE.BACKFEED
+        ? "text-orange-200"
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "text-emerald-300/90"
+          : "text-slate-400";
+
+  const badgeClassName =
+    powerState === NODE_POWER_STATE.PHASE_CONFLICT
+      ? "border-red-400 bg-red-950/70 text-red-100"
+      : powerState === NODE_POWER_STATE.BACKFEED
+        ? "border-orange-400 bg-orange-950/70 text-orange-100"
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "border-emerald-300/80 bg-emerald-400/20 text-emerald-100"
+          : "border-slate-600 bg-slate-800/70 text-slate-300";
+
+  const handleClassName =
+    powerState === NODE_POWER_STATE.PHASE_CONFLICT
+      ? "border border-red-200 bg-red-400"
+      : powerState === NODE_POWER_STATE.BACKFEED
+        ? "border border-orange-200 bg-orange-400"
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "border border-emerald-200 bg-emerald-400"
+          : "border border-slate-300 bg-slate-500";
 
   return (
-    <div className="min-w-56 rounded-md border border-emerald-500/70 bg-slate-900 px-4 py-3 text-left shadow-lg shadow-emerald-950/40">
-      <div className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/80">
+    <div className={`min-w-60 rounded-md border px-4 py-3 text-left ${shellClassName}`}>
+      <div className={`text-[10px] uppercase tracking-[0.2em] ${titleClassName}`}>
         Utility Source
       </div>
-      <div className="mt-1 text-sm font-semibold text-emerald-100">
+      <div className="mt-1 text-sm font-semibold text-slate-100">
         {data.label}
       </div>
       <div className="mt-2 text-xs text-slate-300">{data.voltage}</div>
       <div
-        className={`mt-2 inline-block rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${
-          isLive
-            ? "border-emerald-300/80 bg-emerald-400/20 text-emerald-100"
-            : "border-slate-600 bg-slate-800/70 text-slate-300"
-        }`}
+        className={`mt-2 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${badgeClassName}`}
       >
-        {data.powerState ?? "Dead"}
+        {powerState === NODE_POWER_STATE.PHASE_CONFLICT ||
+        powerState === NODE_POWER_STATE.BACKFEED ? (
+          <WarningIcon className="h-3 w-3" />
+        ) : null}
+        {powerState}
       </div>
+      <div className="mt-1 text-[10px] text-slate-400">
+        Sources: {sourceIds.length > 0 ? sourceIds.join(", ") : "None"}
+      </div>
+
+      <Handle
+        id="utility-in"
+        type="target"
+        position={Position.Left}
+        className={`h-3 w-3 ${handleClassName}`}
+      />
 
       <Handle
         id="utility-out"
         type="source"
         position={Position.Right}
-        className="h-3 w-3 border border-emerald-200 bg-emerald-400"
+        className={`h-3 w-3 ${handleClassName}`}
       />
     </div>
   );
