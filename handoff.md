@@ -1,4 +1,4 @@
-# OneLine-Canvas Master Handoff (Phases 1-10)
+# OneLine-Canvas Master Handoff (Phases 1-11)
 
 ## Source Map (Historical Inputs)
 | Phase | Revision | Date | Commit Subject | Status |
@@ -13,6 +13,7 @@
 | Phase 8 | `1d3482f4edfba70ec4d0a10ce7fde857efcd4991` | `2026-04-13` | `Big Bus geometry update for all gear` | Committed |
 | Phase 9 | `WORKTREE (uncommitted)` | `2026-04-13` | `Implement protective isolation auto-trip breakers` | Completed in workspace |
 | Phase 10 | `WORKTREE (uncommitted)` | `2026-04-14` | `Implement equipment identity and synchronized source paralleling` | Completed in workspace |
+| Phase 11 | `WORKTREE (uncommitted)` | `2026-04-14` | `Add docked SCADA dashboard for source control and breaker reset` | Completed in workspace |
 | Maintenance | `WORKTREE (uncommitted)` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Completed in workspace |
 | Maintenance | `WORKTREE (uncommitted)` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Completed in workspace |
 
@@ -185,6 +186,22 @@
   - Sync groups model compatibility identity only; there is still no phase-angle, frequency, or permissive-window simulation.
   - Validation code was updated, but automated Vitest execution remains blocked in this shell until `node`/`npm` are available.
 
+### Phase 11: SCADA Dashboard
+- Revision: `WORKTREE (uncommitted)`
+- Date: `2026-04-14`
+- Subject: `Add docked SCADA dashboard for source control and breaker reset`
+- Major additions:
+  - Added `ScadaPanel` as a docked HMI-style sidebar between the Equipment Palette and the canvas.
+  - Added dynamic source telemetry derived from canonical React Flow `nodes` for all `utility` and `generator` root sources.
+  - Added remote source actuation that reuses the existing App-level source toggle path instead of duplicating node logic.
+  - Added a global `Reset All Breakers` action that mechanically resets every `tripped` breaker to `open`.
+- Engine-state evolution:
+  - None. `usePowerFlow` and `powerFlow.js` remain unchanged.
+  - SCADA is a UI control surface only; it reads canonical state and mutates `nodes`/`edges` through React state setters.
+- Unresolved items at phase end:
+  - SCADA does not yet execute scripted Sequence of Operations runs, batches, or timed failover orchestration.
+  - Breaker reset is global/manual only; there is no selective reset or breaker grouping model.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `WORKTREE (uncommitted)`
 - Date: `2026-04-14`
@@ -256,6 +273,10 @@
   - Every node now carries a canonical `data.label`.
   - `utility` and `generator` nodes also carry raw `data.syncGroup` strings that persist through localStorage and JSON import/export.
   - All node labels are renameable in-place via double-click without mutating topology geometry.
+- Centralized SCADA control:
+  - A docked SCADA panel lists all root sources with label, sync group, active power state, and source online/offline status.
+  - Source online/offline control can now be actuated remotely from the control-room panel using the same canonical node mutation path as on-canvas controls.
+  - A global `Reset All Breakers` control resets every `tripped` breaker edge back to `open` without changing engine math.
 - Tooling guardrails:
   - `package.json` now declares a Node engine policy of `^20.19.0 || >=22.12.0`.
   - `scripts/check-deps.mjs` validates Node version, manifest/lockfile parity, `DEPENDENCIES.md` parity, `node_modules` presence, and top-level npm install health.
@@ -271,6 +292,9 @@
 - Protection feedback:
   - Conflict evaluation emits a deterministic fault-hit list of closed breakers connected to conflicted nodes.
   - The hit list is consumed by `App.jsx` to trip breakers and clear active faults in the next recompute.
+- SCADA interaction:
+  - The control-room panel reads canonical `nodes` and `edges` only.
+  - Remote source actuation and breaker reset are App-level state mutations layered on top of the existing engine output.
 - Recompute and memoization:
   - Topology key includes node identity/type plus root-source online signatures and normalized root sync-group signatures.
   - Topology key includes edge source/target and breaker state (`open`, `closed`, `tripped`).
@@ -285,6 +309,7 @@
 - `usePowerFlow` now returns `faultedEdgeIds` in addition to node/edge power maps.
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
 - Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
+- SCADA panel must remain a pure UI controller and must not implement or duplicate physics calculations.
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
 - Sync groups model source identity only; there is no phase-angle, frequency, voltage-matching, or breaker permissive-window simulation.
@@ -296,7 +321,7 @@
 - Import validation is shallow; deep schema/version validation for node payloads is not implemented.
 - Persistence is local-browser scoped only; no remote sync, revision history, or multi-user merge workflow exists.
 - `Clear Yard` remains destructive with no confirmation/undo stack.
-- Source controls are node-local; no bulk dispatch/SCADA orchestration layer exists.
+- Source controls are now available both node-local and via SCADA, but there is still no scripted SOO automation, batch sequencing, or scenario playback layer.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 
 ## Engine Verification and Test Coverage Snapshot
@@ -319,4 +344,5 @@
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
+- No dedicated UI tests yet cover SCADA rendering, remote actuation, or global breaker reset interaction.
 - Automated simulation test execution beyond dependency validation still depends on the current workspace toolchain remaining installed and healthy.

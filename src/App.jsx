@@ -21,6 +21,7 @@ import BreakerEdge from "./edges/BreakerEdge";
 import usePowerFlow from "./hooks/usePowerFlow";
 import { BREAKER_STATE, EDGE_POWER_STATE } from "./engine/powerFlow";
 import EquipmentPalette, { DRAG_MIME_TYPE } from "./components/EquipmentPalette";
+import ScadaPanel from "./components/ScadaPanel";
 import {
   getDefaultNodeData,
   isSourceNodeType,
@@ -236,6 +237,30 @@ function App() {
     },
     [setNodes]
   );
+
+  const resetAllTrippedBreakers = useCallback(() => {
+    setEdges((currentEdges) => {
+      let didResetAnyEdge = false;
+
+      const nextEdges = currentEdges.map((edge) => {
+        if (edge.data?.breakerState !== BREAKER_STATE.TRIPPED) {
+          return edge;
+        }
+
+        didResetAnyEdge = true;
+
+        return {
+          ...edge,
+          data: {
+            ...edge.data,
+            breakerState: BREAKER_STATE.OPEN
+          }
+        };
+      });
+
+      return didResetAnyEdge ? nextEdges : currentEdges;
+    });
+  }, [setEdges]);
 
   const renderNodes = useMemo(
     () =>
@@ -488,6 +513,13 @@ function App() {
           onLoadFromFile={onLoadFromFile}
           onClearYard={onClearYard}
         />
+        <ScadaPanel
+          nodes={nodes}
+          edges={edges}
+          powerStateByNodeId={powerStateByNodeId}
+          onToggleSourceOnline={toggleRootSourceOnline}
+          onResetAllBreakers={resetAllTrippedBreakers}
+        />
 
         <div className="relative h-full flex-1" onDrop={onDrop} onDragOver={onDragOver}>
           <ReactFlow
@@ -523,7 +555,7 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 10 Identity &amp; Synchronization
+            OneLine-Canvas Phase 11 SCADA Dashboard
           </div>
         </div>
       </div>
