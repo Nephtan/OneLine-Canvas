@@ -21,7 +21,8 @@
 | Phase 14 | `4e66668` | `2026-04-14` | `Add native visual deletion controls and explicit breaker vs wire draw modes` | Committed |
 | Phase 15 | `9fe5e68` | `2026-04-17` | `Implement voltage-aware transformer propagation and properties modal` | Committed |
 | Feature Update | `516637d` | `2026-04-17` | `Enable PTX primary-bus daisy-chain propagation` | Committed |
-| Working Tree | `working-tree` | `2026-04-17` | `Add dual-ended PTX primary terminals` | Implemented |
+| Feature Update | `273fa4c` | `2026-04-17` | `Add dual-ended PTX primary terminals` | Committed |
+| Working Tree | `working-tree` | `2026-04-17` | `Repair PTX top-edge terminal visuals` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -299,8 +300,8 @@
   - PTX primary daisy-chain behavior is currently modeled as an always-continuous internal bus; explicit operator-controlled S1/S2-style MV switch states are not implemented yet.
   - PTX protection remains idealized; no fuse, relay, or sectionalizing-device behavior is attached to the new primary loop corridor.
 
-### Working Tree Update: PTX Dual-Ended Primary Terminals
-- Revision: `working-tree`
+### Feature Update: PTX Dual-Ended Primary Terminals
+- Revision: `273fa4c`
 - Date: `2026-04-17`
 - Subject: `Add dual-ended PTX primary terminals`
 - Major additions:
@@ -311,6 +312,21 @@
   - PTX handle interpretation is now terminal-aware as well as side-aware: both top terminals belong to the primary bus, but only the target half accepts inbound packets and only the source half emits onward MV packets.
   - A matched primary arrival on either top terminal energizes the full internal primary bus plus the stepped secondary output, allowing PTX corridors to be fed from either end while staying in strict React Flow connection mode and preserving legacy primary-target edge behavior.
   - Existing phase-conflict, backfeed, voltage-fault, and breaker-trip semantics remain unchanged; only PTX primary terminal connectivity is broadened.
+- Unresolved items at phase end:
+  - This commit exposed an unintended PTX shell regression: all four logical primary handles were visually exposed and drifted into the node body instead of collapsing into two clean top-edge operator terminals.
+  - PTX primary daisy-chains are still modeled as always-continuous internal buses; explicit operator-controlled S1/S2-style MV switch states are not implemented yet.
+  - PTX protection remains idealized; no fuse, relay, or sectionalizing-device behavior is attached to the primary bus corridor.
+
+### Working Tree Update: PTX Two-Terminal Visual Repair
+- Revision: `working-tree`
+- Date: `2026-04-17`
+- Subject: `Repair PTX top-edge terminal visuals`
+- Major additions:
+  - Reworked the PTX shell so operators now see exactly two visible primary connection points, both flush on the top border of the transformer card instead of four exposed handles inside the node body.
+  - Kept the four logical PTX primary handles intact under the hood by pairing each visible top-edge source terminal with a transparent companion target handle at the same location.
+  - Removed the visible `A` / `B` terminal chrome and vertical handle stacks so the PTX returns to a clean two-terminal MV presentation without sacrificing strict source/target connectivity.
+- Engine-state evolution:
+  - None. PTX traversal, voltage-fault handling, backfeed modeling, breaker semantics, and handle-aware primary-bus continuity remain unchanged from `273fa4c`.
 - Unresolved items at phase end:
   - PTX primary daisy-chains are still modeled as always-continuous internal buses; explicit operator-controlled S1/S2-style MV switch states are not implemented yet.
   - PTX protection remains idealized; no fuse, relay, or sectionalizing-device behavior is attached to the primary bus corridor.
@@ -418,6 +434,7 @@
 - Voltage-aware electrical modeling:
   - All non-PTX gear now compares incoming propagated voltage against `nominalVoltage` and resolves any mismatch as `Voltage Fault`.
   - PTXs now expose explicit dual-ended primary-bus handle roles (`ptx-bus-in`, `ptx-bus-in-source`, `ptx-bus-loop-target`, `ptx-bus-loop`) plus the existing `ptx-bus-out` secondary handle so MV daisy-chains can be modeled directly on either transformer input terminal.
+  - PTX shells now collapse those four logical primary handles into two visible top-edge operator terminals, keeping the MV presentation clean while strict React Flow source/target wiring remains fully supported underneath.
   - PTXs now transform matched primary packets to `secondaryVoltage` and matched secondary packets to `primaryVoltage`, while a live primary bus can continue the same MV voltage onward through chained PTX corridors.
   - Visual precedence is now locked to `Voltage Fault > Phase Conflict > Backfeed > Live > Dead`; latent phase-conflict flags remain available in engine output even when the node renders purple.
 - Tooling guardrails:
@@ -470,6 +487,7 @@
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
 - Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
 - PTX handle semantics are deterministic: `ptx-bus-in` and `ptx-bus-loop-target` are primary targets, `ptx-bus-in-source` and `ptx-bus-loop` are primary MV sources, and `ptx-bus-out` remains the stepped secondary source.
+- PTX rendering must expose only two visible top-edge operator terminals even though four logical primary handles exist internally for strict source/target connectivity.
 - PTX conduction is side-aware and idealized: matched primary or secondary arrivals energize the internal primary bus, any primary-side edge tied to that bus can then conduct for compatibility, matched primary paths still transform to `secondaryVoltage`, matched secondary paths still step back up to `primaryVoltage`, and mismatched arrivals block that direction.
 - Visual state precedence is locked to `Voltage Fault > Phase Conflict > Backfeed > Live > Dead`, but phase-conflict flags must remain available for breaker trip logic and future diagnostics.
 - `transferSwitch` nodes now require canonical `data.activeSource` of `"primary"` or `"emergency"`.

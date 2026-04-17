@@ -8,13 +8,11 @@ import { TRANSFORMER_HANDLE_ID } from "../topology/transformer";
 
 const PRIMARY_TERMINALS = [
   {
-    label: "A",
     left: "25%",
     targetHandleId: TRANSFORMER_HANDLE_ID.PRIMARY_IN,
     sourceHandleId: TRANSFORMER_HANDLE_ID.PRIMARY_IN_SOURCE
   },
   {
-    label: "B",
     left: "75%",
     targetHandleId: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET,
     sourceHandleId: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP
@@ -120,8 +118,9 @@ function PTXNode({ data }) {
           ? "border border-amber-100 bg-amber-300"
           : "border border-violet-300/70 bg-violet-500/70";
 
-  const primaryTargetHandleClassName = `!h-2.5 !w-7 !rounded-full ${handleClassName}`;
-  const primarySourceHandleClassName = `!h-2 !w-7 !rounded-full ${handleClassName}`;
+  const primaryVisibleHandleClassName = `!h-2.5 !w-7 !rounded-full ${handleClassName}`;
+  const primaryHiddenTargetHandleClassName =
+    "!h-4 !w-9 !rounded-full !border-0 !bg-transparent !opacity-0";
 
   const primaryBusRailClassName =
     powerState === NODE_POWER_STATE.VOLTAGE_FAULT
@@ -135,7 +134,40 @@ function PTXNode({ data }) {
           : "bg-violet-500/70";
 
   return (
-    <div className={`min-w-60 rounded-md border px-4 py-3 text-left ${shellClassName}`}>
+    <div className={`relative min-w-60 rounded-md border px-4 pb-3 pt-6 text-left ${shellClassName}`}>
+      <div
+        className={`pointer-events-none absolute left-2 right-2 top-3 h-1 rounded-full ${primaryBusRailClassName}`}
+      />
+      {PRIMARY_TERMINALS.map((terminal) => (
+        <Handle
+          key={`${terminal.targetHandleId}-target`}
+          id={terminal.targetHandleId}
+          type="target"
+          position={Position.Top}
+          isConnectable
+          className={primaryHiddenTargetHandleClassName}
+          style={{
+            left: terminal.left,
+            top: 0,
+            transform: "translate(-50%, -70%)"
+          }}
+        />
+      ))}
+      {PRIMARY_TERMINALS.map((terminal) => (
+        <Handle
+          key={`${terminal.sourceHandleId}-source`}
+          id={terminal.sourceHandleId}
+          type="source"
+          position={Position.Top}
+          isConnectable
+          className={primaryVisibleHandleClassName}
+          style={{
+            left: terminal.left,
+            top: 0,
+            transform: "translate(-50%, -50%)"
+          }}
+        />
+      ))}
       <div className="flex items-center justify-between gap-2">
         <div className="inline-flex items-center gap-2">
           <TransformerIcon className={`h-4 w-4 ${titleClassName}`} />
@@ -184,46 +216,6 @@ function PTXNode({ data }) {
         {propagatingVoltages.length > 0
           ? propagatingVoltages.map((voltage) => formatVoltageValue(voltage)).join(", ")
           : "None"}
-      </div>
-      <div className="relative mt-3 h-11">
-        <div
-          className={`absolute left-2 right-2 top-5 h-1 rounded-full ${primaryBusRailClassName}`}
-        />
-        {PRIMARY_TERMINALS.map((terminal) => (
-          <div
-            key={terminal.label}
-            className="absolute inset-y-0 w-12 -translate-x-1/2"
-            style={{ left: terminal.left }}
-          >
-            <div className="absolute left-1/2 top-0 -translate-x-1/2 text-[9px] uppercase tracking-[0.18em] text-slate-500">
-              {terminal.label}
-            </div>
-            <Handle
-              id={terminal.targetHandleId}
-              type="target"
-              position={Position.Top}
-              isConnectable
-              className={primaryTargetHandleClassName}
-              style={{
-                left: "50%",
-                top: 11,
-                transform: "translate(-50%, -50%)"
-              }}
-            />
-            <Handle
-              id={terminal.sourceHandleId}
-              type="source"
-              position={Position.Top}
-              isConnectable
-              className={primarySourceHandleClassName}
-              style={{
-                left: "50%",
-                top: 29,
-                transform: "translate(-50%, -50%)"
-              }}
-            />
-          </div>
-        ))}
       </div>
       <Handle
         id={TRANSFORMER_HANDLE_ID.SECONDARY}
