@@ -6,6 +6,13 @@ import {
   normalizeTransferSwitchTargetHandle
 } from "../topology/transferSwitch";
 import { normalizeCanvasEdgeType } from "../topology/edgeTypes";
+import {
+  DEFAULT_LOW_VOLTAGE,
+  DEFAULT_MEDIUM_VOLTAGE,
+  extractVoltagesFromText,
+  normalizeVoltageValue
+} from "../electrical/voltage";
+import { isTransformerNodeType } from "../topology/transformer";
 
 function isSourceNodeType(nodeType) {
   return nodeType === "utility" || nodeType === "generator";
@@ -27,39 +34,44 @@ function getNodeLabelSuffix(seed) {
 const DEFAULT_NODE_DATA_BY_TYPE = {
   utility: (labelSuffix) => ({
     label: `Utility ${labelSuffix}`,
-    voltage: "12.47 kV",
+    nominalVoltage: DEFAULT_MEDIUM_VOLTAGE,
     isSourceOnline: true,
     syncGroup: ""
   }),
   generator: (labelSuffix) => ({
     label: `Generator ${labelSuffix}`,
-    voltage: "480 V Generator",
+    nominalVoltage: DEFAULT_MEDIUM_VOLTAGE,
     isSourceOnline: true,
     syncGroup: ""
   }),
   mvsg: (labelSuffix) => ({
     label: `MVSG ${labelSuffix}`,
-    nominalVoltage: "12.47 kV Bus"
+    nominalVoltage: DEFAULT_MEDIUM_VOLTAGE
   }),
   ptx: (labelSuffix) => ({
     label: `PTX ${labelSuffix}`,
-    ratio: "12.47 kV / 480 V"
+    primaryVoltage: DEFAULT_MEDIUM_VOLTAGE,
+    secondaryVoltage: DEFAULT_LOW_VOLTAGE
   }),
   load: (labelSuffix) => ({
     label: `Load ${labelSuffix}`,
+    nominalVoltage: DEFAULT_LOW_VOLTAGE,
     loadClass: "Data Hall"
   }),
   switchboard: (labelSuffix) => ({
     label: `SWBD ${labelSuffix}`,
+    nominalVoltage: DEFAULT_LOW_VOLTAGE,
     boardClass: "Main Distribution Board"
   }),
   transferSwitch: (labelSuffix) => ({
     label: `ATS ${labelSuffix}`,
+    nominalVoltage: DEFAULT_LOW_VOLTAGE,
     switchClass: "Automatic Transfer Switch",
     activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
   }),
   mechanical: (labelSuffix) => ({
     label: `FCW ${labelSuffix}`,
+    nominalVoltage: DEFAULT_LOW_VOLTAGE,
     mechanicalClass: "Fan Coil Wall"
   })
 };
@@ -69,6 +81,28 @@ export function getDefaultNodeData(nodeType, nodeId) {
   const labelSuffix = getNodeLabelSuffix(nodeId);
 
   return DEFAULT_NODE_DATA_BY_TYPE[normalizedType](labelSuffix);
+}
+
+function normalizeNominalVoltage(currentData, fallbackData) {
+  return normalizeVoltageValue(
+    currentData.nominalVoltage,
+    normalizeVoltageValue(currentData.voltage, fallbackData.nominalVoltage)
+  );
+}
+
+function normalizeTransformerVoltages(currentData, fallbackData) {
+  const legacyRatioValues = extractVoltagesFromText(currentData.ratio);
+
+  return {
+    primaryVoltage: normalizeVoltageValue(
+      currentData.primaryVoltage,
+      legacyRatioValues[0] ?? fallbackData.primaryVoltage
+    ),
+    secondaryVoltage: normalizeVoltageValue(
+      currentData.secondaryVoltage,
+      legacyRatioValues[1] ?? fallbackData.secondaryVoltage
+    )
+  };
 }
 
 export function normalizeNodeData(node) {
@@ -84,11 +118,30 @@ export function normalizeNodeData(node) {
         : fallbackData.label
   };
 
+  if (isTransformerNodeType(node.type)) {
+    const { primaryVoltage, secondaryVoltage } = normalizeTransformerVoltages(
+      currentData,
+      fallbackData
+    );
+    nextData.primaryVoltage = primaryVoltage;
+    nextData.secondaryVoltage = secondaryVoltage;
+    delete nextData.nominalVoltage;
+  } else {
+    nextData.nominalVoltage = normalizeNominalVoltage(currentData, fallbackData);
+    delete nextData.primaryVoltage;
+    delete nextData.secondaryVoltage;
+  }
+
+  delete nextData.voltage;
+  delete nextData.ratio;
+
   if (isSourceNodeType(node.type)) {
     nextData.syncGroup =
       typeof currentData.syncGroup === "string" ? currentData.syncGroup : "";
+    nextData.isSourceOnline = currentData.isSourceOnline !== false;
   } else {
     delete nextData.syncGroup;
+    delete nextData.isSourceOnline;
   }
 
   if (isTransferSwitchNodeType(node.type)) {

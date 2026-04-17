@@ -19,6 +19,7 @@
 | Phase 12 | `d1de6d1` | `2026-04-14` | `Implement snapshot-based MOP recorder and playback deck` | Committed |
 | Phase 13 | `09bc204` | `2026-04-14` | `Implement intelligent ATS interlocks and MOP-aware transfer throws` | Committed |
 | Phase 14 | `4e66668` | `2026-04-14` | `Add native visual deletion controls and explicit breaker vs wire draw modes` | Committed |
+| Phase 15 | `working-tree` | `2026-04-17` | `Implement voltage-aware transformer propagation and properties modal` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -261,6 +262,24 @@
   - Visual delete controls and connection-mode ergonomics are not yet covered by automated UI tests.
   - Keyboard deletion remains enabled, but MOP capture is only guaranteed for the new explicit delete buttons.
 
+### Phase 15: Voltage Reality Check
+- Revision: `working-tree`
+- Date: `2026-04-17`
+- Subject: `Implement voltage-aware transformer propagation and properties modal`
+- Major additions:
+  - Replaced legacy display-only voltage strings with canonical numeric node metadata: `nominalVoltage` for standard gear and `primaryVoltage` / `secondaryVoltage` for PTXs.
+  - Added a compact industrial properties modal, opened from a node-local gear button, for editing labels and voltage metadata without disturbing the existing inline rename flow.
+  - Added backward-compatible graph normalization that preserves numeric voltage metadata and parses recognizable legacy voltage strings such as `34.5 kV`, `12.47 kV Bus`, `480 V Generator`, and `12.47 kV / 480 V`.
+  - Added a new `Voltage Fault` node state with deep-purple pulsing visuals and explicit precedence over `Phase Conflict`, `Backfeed`, and `Live`.
+- Engine-state evolution:
+  - Replaced the continuity-only source-set traversal with packet-based propagation that carries both source identity and propagating voltage.
+  - PTXs now act as true electrical bridges: matched primary-side packets step down to the configured secondary voltage, matched secondary-side packets step back up to the configured primary voltage, and mismatched PTX arrivals fault and stop conduction through that direction.
+  - Non-transformer gear now evaluates incoming propagating voltages against canonical `nominalVoltage`, allowing same-source overvoltage and cross-voltage operator errors to resolve as `Voltage Fault` instead of silently energizing.
+  - The engine now emits `powerFlagsByNodeId` and `propagatingVoltagesByNodeId` so the UI can inspect latent `Phase Conflict` flags even when `Voltage Fault` wins visually.
+- Unresolved items at phase end:
+  - Voltage faults do not auto-trip breakers yet; only `Phase Conflict` continues to drive breaker trip isolation.
+  - PTX behavior is still ideal-ratio only; there is no impedance, inrush, vector-group, tap, or protective relay model.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
@@ -324,13 +343,16 @@
   - Reworked `README.md` into an accurate public repo landing page with a docs map, current-status framing, command guidance, and an explicit limitations section.
 - Dynamic canvas and equipment workflow:
   - Blank-canvas sandbox with drag-drop equipment palette, user-created edges, and deletion support.
+- Canonical electrical metadata and editor workflow:
+  - Every node now persists canonical numeric voltage metadata through create, hydrate, export/import, autosave, and MOP snapshots.
+  - A node-local properties gear opens a shared industrial modal for editing `label`, `nominalVoltage`, or PTX `primaryVoltage` / `secondaryVoltage`.
 - Source-aware dynamic power engine:
   - Topology extracted from live React Flow `nodes`/`edges`.
   - Only closed breakers (`edge.data.breakerState === "closed"`) are conductive and bi-directional.
   - Open and tripped breakers are non-conductive.
-  - Root sources are `utility` and `generator` where `data.isSourceOnline !== false`.
+  - Root sources are `utility` and `generator` where `data.isSourceOnline !== false`, and they now seed traversal packets with their configured `nominalVoltage`.
 - Normalized state model:
-  - Node states: `Dead`, `Live`, `Backfeed`, `Phase Conflict`.
+  - Node states: `Dead`, `Live`, `Backfeed`, `Phase Conflict`, `Voltage Fault`.
   - Edge states: `de-energized`, `energized`, `phase-conflict`.
 - Rendering architecture:
   - Simulation output is derived into render nodes/edges without mutating canonical graph state.
@@ -358,6 +380,10 @@
   - `transferSwitch` nodes now expose two named inputs (`target-primary`, `target-emergency`) and one output bus with canonical `data.activeSource` control.
   - Legacy ATS inbound edges are normalized onto `target-primary` during graph hydration/import so older saved yards continue to conduct through the default primary path.
   - ATS throws are now MOP-recordable actions and replay purely through canonical snapshot application rather than any special transfer-sequence engine.
+- Voltage-aware electrical modeling:
+  - All non-PTX gear now compares incoming propagated voltage against `nominalVoltage` and resolves any mismatch as `Voltage Fault`.
+  - PTXs now transform matched primary packets to `secondaryVoltage` and matched secondary packets to `primaryVoltage`, allowing safe step-down and reverse backfeed studies.
+  - Visual precedence is now locked to `Voltage Fault > Phase Conflict > Backfeed > Live > Dead`; latent phase-conflict flags remain available in engine output even when the node renders purple.
 - Tooling guardrails:
   - `package.json` now declares a Node engine policy of `^20.19.0 || >=22.12.0`.
   - `scripts/check-deps.mjs` validates Node version, manifest/lockfile parity, `DEPENDENCIES.md` parity, `node_modules` presence, and top-level npm install health.
@@ -365,12 +391,21 @@
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
-  - Queue-based source-set propagation over dynamically built adjacency from the current canvas graph.
+  - Queue-based packet propagation over dynamically built adjacency from the current canvas graph.
+  - Each packet carries `{ sourceId, voltage }`, so energized state and propagated voltage are evaluated together instead of as separate post-processing steps.
   - Conductive edges are added to adjacency only after edge-type and ATS-handle evaluation: `breaker` edges must be `closed`, while `standard` wires conduct unless an ATS interlock blocks that branch.
+- Voltage handling:
+  - Root sources inject their own `nominalVoltage` into the traversal when online.
+  - Non-transformer nodes conduct packets unchanged and mark `Voltage Fault` whenever any incoming packet voltage differs from their `nominalVoltage`.
+  - PTXs evaluate packets by arrival side: primary-side arrivals must match `primaryVoltage` to emit `secondaryVoltage`, and secondary-side arrivals must match `secondaryVoltage` to emit `primaryVoltage`.
+  - A PTX voltage mismatch blocks conduction through that direction only, leaving the far side dark while the PTX itself renders as `Voltage Fault`.
 - Conflict and backfeed:
   - Multi-source overlap resolves to `Phase Conflict` only when the contributing source IDs do not all map to one shared, non-empty normalized sync group.
   - Blank sync groups are treated as unsynchronized/unknown and never safely parallel.
   - Root fed by synchronized foreign sources without its own source ID resolves to `Backfeed`.
+- Fault precedence and protection:
+  - Node render state is derived from flags with strict precedence: `Voltage Fault > Phase Conflict > Backfeed > Live > Dead`.
+  - Breaker auto-trip remains phase-conflict-only and keys off the latent `hasPhaseConflict` flag rather than the dominant rendered node state.
 - Protection feedback:
   - Conflict evaluation emits a deterministic fault-hit list of closed breaker edges connected to conflicted nodes.
   - The hit list is consumed by `App.jsx` to trip breakers and clear active faults in the next recompute.
@@ -393,8 +428,12 @@
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
 - Persistence contract is now `{ nodes, edges, mopSteps, mopBaseSnapshot }` with backward-compatible shallow import validation at the top-level graph shape.
 - `usePowerFlow` now returns `faultedEdgeIds` in addition to node/edge power maps.
+- Canonical voltage metadata must remain numeric in volts: standard gear uses `nominalVoltage`, while PTXs use `primaryVoltage` and `secondaryVoltage`.
+- Voltage-aware traversal packets must preserve both `sourceId` and propagated voltage all the way through memoized evaluation.
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
 - Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
+- PTX conduction is side-aware and idealized: matched primary packets step down to `secondaryVoltage`, matched secondary packets step back up to `primaryVoltage`, and mismatched arrivals block that direction.
+- Visual state precedence is locked to `Voltage Fault > Phase Conflict > Backfeed > Live > Dead`, but phase-conflict flags must remain available for breaker trip logic and future diagnostics.
 - `transferSwitch` nodes now require canonical `data.activeSource` of `"primary"` or `"emergency"`.
 - ATS inactive feeder edges must behave exactly like open branches: non-conductive, `de-energized`, and excluded from conflict/trip evaluation.
 - SCADA panel must remain a pure UI controller and must not implement or duplicate physics calculations.
@@ -402,12 +441,13 @@
 - MOP actions now include ATS throws plus explicit node/edge delete keyframes in addition to source toggles and breaker toggles.
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
-- Sync groups model source identity only; there is no phase-angle, frequency, voltage-matching, or breaker permissive-window simulation.
+- Sync groups still model source identity only; there is no phase-angle, frequency, or breaker permissive-window simulation beyond the new node/PTX voltage matching rules.
 - Protective isolation is coarse-grained: all closed breakers adjacent to conflict nodes trip in the same cycle.
+- Voltage faults are visualized and preserved in engine flags, but they do not yet trigger automatic protective isolation or selective breaker operations.
 - No relay timing/coordination hierarchy exists (instantaneous trip, no selective delay curves, no lockout sequencing).
 - Big Bus geometry intentionally allows operator-error topologies; no interlock/sequencing logic is enforced.
 - Terminal sinks (`load`, `mechanical`) rely on handle geometry; deeper directionality/protection validation is not implemented.
-- Advanced electrical semantics remain unmodeled (for example transformer vector groups and detailed transfer/protection schemes).
+- Advanced electrical semantics remain unmodeled (for example transformer vector groups, impedance, tap settings, and detailed transfer/protection schemes).
 - Import validation is shallow; deep schema/version validation for node payloads is not implemented.
 - Persistence is local-browser scoped only; no remote sync, revision history, or multi-user merge workflow exists.
 - `Clear Yard` remains destructive with no confirmation/undo stack.
@@ -427,10 +467,11 @@
 - Edge power-state mapping (`de-energized`, `energized`, `phase-conflict`).
 - Trip-aware breaker behavior (`tripped` treated as non-conductive/de-energized).
 - Fault-hitlist emission (`faultedEdgeIds`) for conflict corridors and non-conflict empty-set checks.
-- PTX/load downstream propagation and utility-offline blackout behavior.
+- Voltage-fault detection for direct MV-to-LV feeds, PTX step-down success paths, PTX primary mismatch firewall behavior, and reverse PTX backfeed.
 - Generator root propagation, generator-offline behavior, utility+generator tie conflict, and generator topology-key invalidation.
 - Root sync-group topology-key invalidation and label-only cache stability.
 - ATS interlock behavior on both breaker and standard-wire feeders plus end-to-end chain propagation through `generator -> switchboard -> transferSwitch -> mechanical`.
+- Graph normalization coverage for numeric voltage metadata and recognizable legacy voltage-string imports.
 
 ### Current Validation Gaps
 - No engine model/tests for synchronization permissives beyond shared sync-group identity (phase-angle drift, frequency slip, or voltage windows).

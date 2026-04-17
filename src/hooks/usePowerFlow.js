@@ -7,7 +7,9 @@ function usePowerFlow(nodes, edges) {
     topologyKey: null,
     result: {
       powerStateByNodeId: {},
+      powerFlagsByNodeId: {},
       sourceIdsByNodeId: {},
+      propagatingVoltagesByNodeId: {},
       edgePowerStateByEdgeId: {},
       faultedEdgeIds: [],
       adjacencyByNodeId: {}

@@ -4,15 +4,13 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 `handoff.md` remains the historical architecture narrative; this checklist tracks what still needs to be closed.
 
 ## Electrical Data Model
-- [ ] Add canonical editable electrical metadata for all node types, including `nominalVoltage` and optional `ratedCurrentAmps`.
+- [ ] Expand the now-canonical node voltage metadata with optional `ratedCurrentAmps` and other equipment-specific ratings.
 - [ ] Add canonical editable electrical metadata for breaker, wire, switch, and future protective-device edges, including optional `ratedCurrentAmps` and device-specific rating fields.
 - [ ] Normalize equipment-specific metadata contracts so new, imported, and hydrated gear preserve electrical ratings consistently.
 - [ ] Define which metadata belongs on nodes versus edges for switchgear line/load terminals, breaker devices, and future protective schemes.
 
 ## Engine Semantics
-- [ ] Move beyond continuity-only traversal to voltage-aware semantics across mixed 12.47 kV and 480 V topologies.
-- [ ] Implement PTX or transformer electrical behavior so step-down or transformation logic is simulated rather than displayed as a label only.
-- [ ] Add voltage and compatibility validation hooks so the engine can detect invalid cross-voltage connections and other impossible electrical states.
+- [ ] Extend voltage-aware traversal beyond nominal mismatch checks into richer compatibility validation such as allowable windows, source permissives, or equipment-specific voltage tolerances.
 - [ ] Define how future electrical metadata is consumed incrementally by the engine without breaking existing project-agnostic topology workflows.
 
 ## Breaker and Switch Realism
@@ -32,14 +30,13 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 - [ ] Decide how invalid handle assignments or future device-specific wiring errors should be surfaced to the operator.
 
 ## Testing and Performance
-- [ ] Add engine tests for voltage-aware and transformer-aware behavior once those semantics are introduced.
 - [ ] Add tests for canonical electrical metadata normalization and persistence across create, hydrate, export, and import flows.
 - [ ] Add formal large-graph stress and performance coverage for traversal cost ceilings and memoization stability.
 - [ ] Add tests for any future protection, relay coordination, or breaker rating semantics.
 
 ## UI and Workflow Coverage
 - [ ] Add automated UI coverage for delete controls, breaker-vs-wire draw mode selection, SCADA actions, and MOP recording or playback flows.
-- [ ] Add UI support for editing canonical electrical details like voltage, current, and device ratings directly on relevant equipment and devices.
+- [ ] Expand the new properties modal beyond voltage into current, device ratings, and richer equipment-specific electrical metadata.
 - [ ] Define how electrical metadata editing should scale across large project topologies without overloading the canvas UI.
 
 ## Documentation Alignment

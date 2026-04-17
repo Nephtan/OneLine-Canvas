@@ -10,6 +10,12 @@ import {
   isBreakerEdgeType,
   normalizeCanvasEdgeType
 } from "../topology/edgeTypes";
+import { normalizeVoltageValue } from "../electrical/voltage";
+import {
+  TRANSFORMER_SIDE,
+  getTransformerSideForEdge,
+  isTransformerNodeType
+} from "../topology/transformer";
 
 export const BREAKER_STATE = {
   OPEN: "open",
@@ -21,7 +27,8 @@ export const NODE_POWER_STATE = {
   DEAD: "Dead",
   LIVE: "Live",
   BACKFEED: "Backfeed",
-  PHASE_CONFLICT: "Phase Conflict"
+  PHASE_CONFLICT: "Phase Conflict",
+  VOLTAGE_FAULT: "Voltage Fault"
 };
 
 export const EDGE_POWER_STATE = {
@@ -32,6 +39,18 @@ export const EDGE_POWER_STATE = {
 
 function isRootSourceType(nodeType) {
   return nodeType === "utility" || nodeType === "generator";
+}
+
+function getNodeNominalVoltage(node) {
+  return normalizeVoltageValue(node?.data?.nominalVoltage, 0);
+}
+
+function getTransformerVoltage(node, side) {
+  if (side === TRANSFORMER_SIDE.PRIMARY) {
+    return normalizeVoltageValue(node?.data?.primaryVoltage, 0);
+  }
+
+  return normalizeVoltageValue(node?.data?.secondaryVoltage, 0);
 }
 
 function getTransferSwitchHandleIdForEdge(edge, nodeId) {
@@ -47,10 +66,7 @@ function getTransferSwitchHandleIdForEdge(edge, nodeId) {
 function transferSwitchConductsHandle(node, handleId) {
   const handleRole = getTransferSwitchHandleRole(handleId);
 
-  if (
-    handleRole === null ||
-    handleRole === "output"
-  ) {
+  if (handleRole === null || handleRole === "output") {
     return true;
   }
 
@@ -157,10 +173,141 @@ function hasUnsynchronizedSources(sourceIds, nodeById) {
   return false;
 }
 
+function createEmptyPowerFlags() {
+  return {
+    isLive: false,
+    isBackfeed: false,
+    hasPhaseConflict: false,
+    hasVoltageFault: false
+  };
+}
+
+function resolveDominantPowerState(powerFlags) {
+  if (powerFlags.hasVoltageFault) {
+    return NODE_POWER_STATE.VOLTAGE_FAULT;
+  }
+
+  if (powerFlags.hasPhaseConflict) {
+    return NODE_POWER_STATE.PHASE_CONFLICT;
+  }
+
+  if (powerFlags.isBackfeed) {
+    return NODE_POWER_STATE.BACKFEED;
+  }
+
+  if (powerFlags.isLive) {
+    return NODE_POWER_STATE.LIVE;
+  }
+
+  return NODE_POWER_STATE.DEAD;
+}
+
+function getNodeVoltageSignature(node) {
+  if (isTransformerNodeType(node.type)) {
+    return `${getTransformerVoltage(node, TRANSFORMER_SIDE.PRIMARY)}:${getTransformerVoltage(
+      node,
+      TRANSFORMER_SIDE.SECONDARY
+    )}`;
+  }
+
+  return String(getNodeNominalVoltage(node));
+}
+
+function createPacketKey(nodeId, arrivalSide, sourceId, voltage) {
+  return `${nodeId}|${arrivalSide ?? "bus"}|${sourceId}|${voltage}`;
+}
+
+function createArrivalBuckets() {
+  return {
+    bus: new Set(),
+    primary: new Set(),
+    secondary: new Set()
+  };
+}
+
+function getNeighborIdForEdge(edge, nodeId) {
+  return edge.source === nodeId ? edge.target : edge.source;
+}
+
+function getArrivalSideForNeighbor(edge, neighborNode) {
+  if (!neighborNode || !isTransformerNodeType(neighborNode.type)) {
+    return null;
+  }
+
+  return getTransformerSideForEdge(edge, neighborNode.id);
+}
+
+function recordArrivalVoltage(arrivalBucketsByNodeId, nodeId, arrivalSide, voltage) {
+  const arrivalBuckets = arrivalBucketsByNodeId.get(nodeId);
+
+  if (!arrivalBuckets) {
+    return;
+  }
+
+  if (arrivalSide === TRANSFORMER_SIDE.PRIMARY) {
+    arrivalBuckets.primary.add(voltage);
+    return;
+  }
+
+  if (arrivalSide === TRANSFORMER_SIDE.SECONDARY) {
+    arrivalBuckets.secondary.add(voltage);
+    return;
+  }
+
+  arrivalBuckets.bus.add(voltage);
+}
+
+function getTransformerOutgoingPacket(node, arrivalSide, voltage) {
+  if (arrivalSide === TRANSFORMER_SIDE.PRIMARY) {
+    if (voltage !== getTransformerVoltage(node, TRANSFORMER_SIDE.PRIMARY)) {
+      return null;
+    }
+
+    return {
+      outgoingSide: TRANSFORMER_SIDE.SECONDARY,
+      outgoingVoltage: getTransformerVoltage(node, TRANSFORMER_SIDE.SECONDARY)
+    };
+  }
+
+  if (arrivalSide === TRANSFORMER_SIDE.SECONDARY) {
+    if (voltage !== getTransformerVoltage(node, TRANSFORMER_SIDE.SECONDARY)) {
+      return null;
+    }
+
+    return {
+      outgoingSide: TRANSFORMER_SIDE.PRIMARY,
+      outgoingVoltage: getTransformerVoltage(node, TRANSFORMER_SIDE.PRIMARY)
+    };
+  }
+
+  return null;
+}
+
+function setHasVoltageFaultForNode(node, arrivalBuckets, nodeVoltageSet) {
+  if (isTransformerNodeType(node.type)) {
+    const primaryVoltage = getTransformerVoltage(node, TRANSFORMER_SIDE.PRIMARY);
+    const secondaryVoltage = getTransformerVoltage(
+      node,
+      TRANSFORMER_SIDE.SECONDARY
+    );
+    const primaryMismatch = Array.from(arrivalBuckets.primary).some(
+      (voltage) => voltage !== primaryVoltage
+    );
+    const secondaryMismatch = Array.from(arrivalBuckets.secondary).some(
+      (voltage) => voltage !== secondaryVoltage
+    );
+
+    return primaryMismatch || secondaryMismatch;
+  }
+
+  const nominalVoltage = getNodeNominalVoltage(node);
+  return Array.from(nodeVoltageSet).some((voltage) => voltage !== nominalVoltage);
+}
+
 export function createTopologyKey(nodes, edges) {
   const nodeSignature = nodes
     .map((node) => {
-      const utilityOnlineSignature =
+      const sourceOnlineSignature =
         isRootSourceType(node.type) ? (isRootSourceOnline(node) ? "1" : "0") : "-";
       const syncGroupSignature = isRootSourceType(node.type)
         ? normalizeSyncGroup(node.data?.syncGroup)
@@ -168,7 +315,10 @@ export function createTopologyKey(nodes, edges) {
       const activeSourceSignature = isTransferSwitchNodeType(node.type)
         ? normalizeTransferSwitchActiveSource(node.data?.activeSource)
         : "-";
-      return `${node.id}:${node.type ?? "default"}:${utilityOnlineSignature}:${syncGroupSignature}:${activeSourceSignature}`;
+
+      return `${node.id}:${node.type ?? "default"}:${sourceOnlineSignature}:${syncGroupSignature}:${activeSourceSignature}:${getNodeVoltageSignature(
+        node
+      )}`;
     })
     .sort();
 
@@ -183,9 +333,9 @@ export function createTopologyKey(nodes, edges) {
         typeof edge.sourceHandle === "string" ? edge.sourceHandle : "";
       const targetHandleSignature =
         typeof edge.targetHandle === "string"
-          ? (edge.targetHandle === TRANSFER_SWITCH_HANDLE_ID.LEGACY_INPUT
-              ? TRANSFER_SWITCH_HANDLE_ID.PRIMARY
-              : edge.targetHandle)
+          ? edge.targetHandle === TRANSFER_SWITCH_HANDLE_ID.LEGACY_INPUT
+            ? TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+            : edge.targetHandle
           : "";
       return `${edgeType}:${edge.source}:${sourceHandleSignature}->${edge.target}:${targetHandleSignature}:${breakerState}`;
     })
@@ -202,11 +352,18 @@ export function evaluatePowerFlow(nodes, edges) {
   const validNodeIdSet = new Set(nodeIds);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const adjacencySets = new Map();
+  const incidentEdgesByNodeId = new Map();
   const sourceSetsByNodeId = new Map();
+  const voltageSetsByNodeId = new Map();
+  const arrivalBucketsByNodeId = new Map();
+  const edgeTransmissionSourceIdsByEdgeId = new Map();
 
   for (const nodeId of nodeIds) {
     adjacencySets.set(nodeId, new Set());
+    incidentEdgesByNodeId.set(nodeId, []);
     sourceSetsByNodeId.set(nodeId, new Set());
+    voltageSetsByNodeId.set(nodeId, new Set());
+    arrivalBucketsByNodeId.set(nodeId, createArrivalBuckets());
   }
 
   for (const edge of edges) {
@@ -220,99 +377,149 @@ export function evaluatePowerFlow(nodes, edges) {
 
     adjacencySets.get(edge.source).add(edge.target);
     adjacencySets.get(edge.target).add(edge.source);
+    incidentEdgesByNodeId.get(edge.source).push(edge);
+    incidentEdgesByNodeId.get(edge.target).push(edge);
+    edgeTransmissionSourceIdsByEdgeId.set(edge.id, new Set());
   }
 
-  const onlineRootSourceIds = nodes
+  const packetQueue = [];
+  const seenPacketKeys = new Set();
+
+  function enqueuePacket(nodeId, arrivalSide, sourceId, voltage) {
+    const packetKey = createPacketKey(nodeId, arrivalSide, sourceId, voltage);
+
+    if (seenPacketKeys.has(packetKey)) {
+      return;
+    }
+
+    seenPacketKeys.add(packetKey);
+    packetQueue.push({
+      nodeId,
+      arrivalSide,
+      sourceId,
+      voltage
+    });
+  }
+
+  nodes
     .filter((node) => isRootSourceOnline(node))
-    .map((node) => node.id);
-
-  const queue = [...onlineRootSourceIds];
-  const queuedSet = new Set(onlineRootSourceIds);
-
-  for (const utilitySourceId of onlineRootSourceIds) {
-    sourceSetsByNodeId.get(utilitySourceId).add(utilitySourceId);
-  }
+    .forEach((node) => {
+      enqueuePacket(node.id, null, node.id, getNodeNominalVoltage(node));
+    });
 
   let readIndex = 0;
 
-  while (readIndex < queue.length) {
-    const currentNodeId = queue[readIndex];
+  while (readIndex < packetQueue.length) {
+    const packet = packetQueue[readIndex];
     readIndex += 1;
-    queuedSet.delete(currentNodeId);
 
-    const neighbors = adjacencySets.get(currentNodeId);
-    const currentNodeSources = sourceSetsByNodeId.get(currentNodeId);
+    const currentNode = nodeById.get(packet.nodeId);
 
-    if (!neighbors || !currentNodeSources || currentNodeSources.size === 0) {
+    if (!currentNode) {
       continue;
     }
 
-    for (const neighborId of neighbors) {
-      const neighborSources = sourceSetsByNodeId.get(neighborId);
+    sourceSetsByNodeId.get(packet.nodeId).add(packet.sourceId);
+    voltageSetsByNodeId.get(packet.nodeId).add(packet.voltage);
+    recordArrivalVoltage(
+      arrivalBucketsByNodeId,
+      packet.nodeId,
+      packet.arrivalSide,
+      packet.voltage
+    );
 
-      if (!neighborSources) {
+    const incidentEdges = incidentEdgesByNodeId.get(packet.nodeId);
+
+    if (!incidentEdges || incidentEdges.length === 0) {
+      continue;
+    }
+
+    if (isTransformerNodeType(currentNode.type)) {
+      const outgoingPacket = getTransformerOutgoingPacket(
+        currentNode,
+        packet.arrivalSide,
+        packet.voltage
+      );
+
+      if (!outgoingPacket) {
         continue;
       }
 
-      let neighborChanged = false;
-
-      for (const sourceId of currentNodeSources) {
-        if (neighborSources.has(sourceId)) {
+      for (const edge of incidentEdges) {
+        if (
+          getTransformerSideForEdge(edge, packet.nodeId) !==
+          outgoingPacket.outgoingSide
+        ) {
           continue;
         }
 
-        neighborSources.add(sourceId);
-        neighborChanged = true;
+        const neighborId = getNeighborIdForEdge(edge, packet.nodeId);
+        const neighborNode = nodeById.get(neighborId);
+
+        edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
+        enqueuePacket(
+          neighborId,
+          getArrivalSideForNeighbor(edge, neighborNode),
+          packet.sourceId,
+          outgoingPacket.outgoingVoltage
+        );
       }
 
-      if (!neighborChanged || queuedSet.has(neighborId)) {
-        continue;
-      }
+      continue;
+    }
 
-      queue.push(neighborId);
-      queuedSet.add(neighborId);
+    for (const edge of incidentEdges) {
+      const neighborId = getNeighborIdForEdge(edge, packet.nodeId);
+      const neighborNode = nodeById.get(neighborId);
+
+      edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
+      enqueuePacket(
+        neighborId,
+        getArrivalSideForNeighbor(edge, neighborNode),
+        packet.sourceId,
+        packet.voltage
+      );
     }
   }
 
   const powerStateByNodeId = {};
+  const powerFlagsByNodeId = {};
   const sourceIdsByNodeId = {};
+  const propagatingVoltagesByNodeId = {};
 
   for (const nodeId of nodeIds) {
     const node = nodeById.get(nodeId);
     const sourceSet = sourceSetsByNodeId.get(nodeId);
+    const voltageSet = voltageSetsByNodeId.get(nodeId);
     const sourceIds = Array.from(sourceSet ?? []).sort();
+    const voltageValues = Array.from(voltageSet ?? []).sort((left, right) => left - right);
+    const powerFlags = createEmptyPowerFlags();
+
     sourceIdsByNodeId[nodeId] = sourceIds;
+    propagatingVoltagesByNodeId[nodeId] = voltageValues;
 
-    if (sourceIds.length === 0) {
-      powerStateByNodeId[nodeId] = NODE_POWER_STATE.DEAD;
-      continue;
-    }
+    if (sourceIds.length > 0) {
+      powerFlags.hasPhaseConflict = hasUnsynchronizedSources(sourceIds, nodeById);
+      powerFlags.hasVoltageFault = setHasVoltageFaultForNode(
+        node,
+        arrivalBucketsByNodeId.get(nodeId),
+        voltageSet ?? new Set()
+      );
 
-    const hasConflict = hasUnsynchronizedSources(sourceIds, nodeById);
-
-    if (isRootSourceType(node?.type)) {
-      if (hasConflict) {
-        powerStateByNodeId[nodeId] = NODE_POWER_STATE.PHASE_CONFLICT;
-        continue;
+      if (isRootSourceType(node?.type)) {
+        powerFlags.isLive = sourceIds.includes(nodeId);
+        powerFlags.isBackfeed = !sourceIds.includes(nodeId);
+      } else {
+        powerFlags.isLive = true;
       }
-
-      powerStateByNodeId[nodeId] =
-        sourceIds.includes(nodeId)
-          ? NODE_POWER_STATE.LIVE
-          : NODE_POWER_STATE.BACKFEED;
-      continue;
     }
 
-    powerStateByNodeId[nodeId] =
-      hasConflict
-        ? NODE_POWER_STATE.PHASE_CONFLICT
-        : NODE_POWER_STATE.LIVE;
+    powerFlagsByNodeId[nodeId] = powerFlags;
+    powerStateByNodeId[nodeId] = resolveDominantPowerState(powerFlags);
   }
 
-  const conflictNodeIdSet = new Set(
-    nodeIds.filter(
-      (nodeId) => powerStateByNodeId[nodeId] === NODE_POWER_STATE.PHASE_CONFLICT
-    )
+  const phaseConflictNodeIdSet = new Set(
+    nodeIds.filter((nodeId) => powerFlagsByNodeId[nodeId]?.hasPhaseConflict)
   );
 
   const adjacencyByNodeId = {};
@@ -336,38 +543,34 @@ export function evaluatePowerFlow(nodes, edges) {
 
     if (
       isBreakerEdgeType(edge.type) &&
-      (conflictNodeIdSet.has(edge.source) || conflictNodeIdSet.has(edge.target))
+      (phaseConflictNodeIdSet.has(edge.source) ||
+        phaseConflictNodeIdSet.has(edge.target))
     ) {
       faultedEdgeIdSet.add(edge.id);
     }
 
-    const sourceIdsAtSource = sourceSetsByNodeId.get(edge.source);
-    const sourceIdsAtTarget = sourceSetsByNodeId.get(edge.target);
+    const transmittedSourceIds = Array.from(
+      edgeTransmissionSourceIdsByEdgeId.get(edge.id) ?? []
+    );
 
-    if (!sourceIdsAtSource || !sourceIdsAtTarget) {
+    if (transmittedSourceIds.length === 0) {
       edgePowerStateByEdgeId[edge.id] = EDGE_POWER_STATE.DE_ENERGIZED;
       continue;
     }
 
-    const unionSourceIds = new Set([
-      ...sourceIdsAtSource,
-      ...sourceIdsAtTarget
-    ]);
-
-    if (hasUnsynchronizedSources(unionSourceIds, nodeById)) {
+    if (hasUnsynchronizedSources(transmittedSourceIds, nodeById)) {
       edgePowerStateByEdgeId[edge.id] = EDGE_POWER_STATE.PHASE_CONFLICT;
       continue;
     }
 
-    edgePowerStateByEdgeId[edge.id] =
-      unionSourceIds.size > 0
-        ? EDGE_POWER_STATE.ENERGIZED
-        : EDGE_POWER_STATE.DE_ENERGIZED;
+    edgePowerStateByEdgeId[edge.id] = EDGE_POWER_STATE.ENERGIZED;
   }
 
   return {
     powerStateByNodeId,
+    powerFlagsByNodeId,
     sourceIdsByNodeId,
+    propagatingVoltagesByNodeId,
     adjacencyByNodeId,
     edgePowerStateByEdgeId,
     faultedEdgeIds: Array.from(faultedEdgeIdSet).sort()

@@ -16,6 +16,10 @@ function getTypeBadgeClassName(nodeType) {
 }
 
 function getPowerStateBadgeClassName(powerState) {
+  if (powerState === NODE_POWER_STATE.VOLTAGE_FAULT) {
+    return "border-purple-400 bg-purple-950/70 text-purple-100";
+  }
+
   if (powerState === NODE_POWER_STATE.PHASE_CONFLICT) {
     return "border-red-400 bg-red-950/70 text-red-100";
   }

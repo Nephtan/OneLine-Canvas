@@ -11,6 +11,11 @@ import {
   TRANSFER_SWITCH_HANDLE_ID
 } from "../topology/transferSwitch";
 import { EDGE_TYPE as CANVAS_EDGE_TYPE } from "../topology/edgeTypes";
+import {
+  DEFAULT_LOW_VOLTAGE,
+  DEFAULT_MEDIUM_VOLTAGE
+} from "../electrical/voltage";
+import { normalizeGraphState } from "../nodes/nodeData";
 
 function utilityNode(id, options = {}) {
   return {
@@ -18,6 +23,7 @@ function utilityNode(id, options = {}) {
     type: "utility",
     data: {
       label: id,
+      nominalVoltage: options.nominalVoltage ?? DEFAULT_MEDIUM_VOLTAGE,
       syncGroup: options.syncGroup ?? "",
       isSourceOnline:
         options.isSourceOnline === undefined ? true : options.isSourceOnline
@@ -32,6 +38,7 @@ function generatorNode(id, options = {}) {
     type: "generator",
     data: {
       label: id,
+      nominalVoltage: options.nominalVoltage ?? DEFAULT_MEDIUM_VOLTAGE,
       syncGroup: options.syncGroup ?? "",
       isSourceOnline:
         options.isSourceOnline === undefined ? true : options.isSourceOnline
@@ -40,38 +47,51 @@ function generatorNode(id, options = {}) {
   };
 }
 
-function mvsgNode(id) {
+function mvsgNode(id, options = {}) {
   return {
     id,
     type: "mvsg",
-    data: { label: id },
+    data: {
+      label: id,
+      nominalVoltage: options.nominalVoltage ?? DEFAULT_MEDIUM_VOLTAGE
+    },
     position: { x: 0, y: 0 }
   };
 }
 
-function ptxNode(id) {
+function ptxNode(id, options = {}) {
   return {
     id,
     type: "ptx",
-    data: { label: id },
+    data: {
+      label: id,
+      primaryVoltage: options.primaryVoltage ?? DEFAULT_MEDIUM_VOLTAGE,
+      secondaryVoltage: options.secondaryVoltage ?? DEFAULT_LOW_VOLTAGE
+    },
     position: { x: 0, y: 0 }
   };
 }
 
-function loadNode(id) {
+function loadNode(id, options = {}) {
   return {
     id,
     type: "load",
-    data: { label: id },
+    data: {
+      label: id,
+      nominalVoltage: options.nominalVoltage ?? DEFAULT_LOW_VOLTAGE
+    },
     position: { x: 0, y: 0 }
   };
 }
 
-function switchboardNode(id) {
+function switchboardNode(id, options = {}) {
   return {
     id,
     type: "switchboard",
-    data: { label: id },
+    data: {
+      label: id,
+      nominalVoltage: options.nominalVoltage ?? DEFAULT_LOW_VOLTAGE
+    },
     position: { x: 0, y: 0 }
   };
 }
@@ -82,6 +102,7 @@ function transferSwitchNode(id, options = {}) {
     type: "transferSwitch",
     data: {
       label: id,
+      nominalVoltage: options.nominalVoltage ?? DEFAULT_LOW_VOLTAGE,
       activeSource:
         options.activeSource ?? TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
     },
@@ -89,11 +110,14 @@ function transferSwitchNode(id, options = {}) {
   };
 }
 
-function mechanicalNode(id) {
+function mechanicalNode(id, options = {}) {
   return {
     id,
     type: "mechanical",
-    data: { label: id },
+    data: {
+      label: id,
+      nominalVoltage: options.nominalVoltage ?? DEFAULT_LOW_VOLTAGE
+    },
     position: { x: 0, y: 0 }
   };
 }
@@ -347,7 +371,11 @@ describe("evaluatePowerFlow", () => {
   });
 
   it("emits no faulted edge ids on single-source energized paths", () => {
-    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a"), loadNode("load-a")];
+    const nodes = [
+      utilityNode("utility-a"),
+      mvsgNode("mvsg-a"),
+      loadNode("load-a", { nominalVoltage: DEFAULT_MEDIUM_VOLTAGE })
+    ];
     const edges = [
       breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
       breakerEdge("e2", "mvsg-a", "load-a", BREAKER_STATE.CLOSED)
@@ -428,8 +456,117 @@ describe("evaluatePowerFlow", () => {
     expect(edgePowerStateByEdgeId["e3"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
   });
 
+  it("flags a voltage fault when medium voltage feeds low-voltage gear directly", () => {
+    const nodes = [generatorNode("gen-a"), switchboardNode("swbd-a")];
+    const edges = [breakerEdge("e1", "gen-a", "swbd-a", BREAKER_STATE.CLOSED)];
+    const {
+      powerFlagsByNodeId,
+      powerStateByNodeId,
+      propagatingVoltagesByNodeId,
+      faultedEdgeIds
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.VOLTAGE_FAULT);
+    expect(powerFlagsByNodeId["swbd-a"]).toMatchObject({
+      isLive: true,
+      hasPhaseConflict: false,
+      hasVoltageFault: true
+    });
+    expect(propagatingVoltagesByNodeId["swbd-a"]).toEqual([
+      DEFAULT_MEDIUM_VOLTAGE
+    ]);
+    expect(faultedEdgeIds).toEqual([]);
+  });
+
+  it("steps transformer voltage down before energizing low-voltage gear", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      mvsgNode("mvsg-a"),
+      ptxNode("ptx-a"),
+      switchboardNode("swbd-a"),
+      loadNode("load-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "mvsg-a", "ptx-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e3", "ptx-a", "swbd-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e4", "swbd-a", "load-a", BREAKER_STATE.CLOSED)
+    ];
+    const {
+      powerFlagsByNodeId,
+      powerStateByNodeId,
+      propagatingVoltagesByNodeId
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerFlagsByNodeId["swbd-a"].hasVoltageFault).toBe(false);
+    expect(propagatingVoltagesByNodeId["ptx-a"]).toEqual([
+      DEFAULT_LOW_VOLTAGE,
+      DEFAULT_MEDIUM_VOLTAGE
+    ]);
+    expect(propagatingVoltagesByNodeId["swbd-a"]).toEqual([DEFAULT_LOW_VOLTAGE]);
+    expect(propagatingVoltagesByNodeId["load-a"]).toEqual([DEFAULT_LOW_VOLTAGE]);
+  });
+
+  it("firewalls PTX output when the primary side sees the wrong voltage", () => {
+    const nodes = [
+      utilityNode("utility-a", { nominalVoltage: 12470 }),
+      ptxNode("ptx-a"),
+      loadNode("load-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "ptx-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "ptx-a", "load-a", BREAKER_STATE.CLOSED)
+    ];
+    const { edgePowerStateByEdgeId, powerStateByNodeId } = evaluatePowerFlow(
+      nodes,
+      edges
+    );
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.VOLTAGE_FAULT);
+    expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(edgePowerStateByEdgeId["e1"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(edgePowerStateByEdgeId["e2"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+  });
+
+  it("supports reverse PTX backfeed when the secondary voltage matches", () => {
+    const nodes = [
+      generatorNode("gen-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      switchboardNode("swbd-a"),
+      ptxNode("ptx-a"),
+      mvsgNode("mvsg-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "gen-a", "swbd-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "ptx-a", "swbd-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e3", "mvsg-a", "ptx-a", BREAKER_STATE.CLOSED)
+    ];
+    const {
+      powerFlagsByNodeId,
+      powerStateByNodeId,
+      propagatingVoltagesByNodeId
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerFlagsByNodeId["ptx-a"].hasVoltageFault).toBe(false);
+    expect(propagatingVoltagesByNodeId["swbd-a"]).toEqual([DEFAULT_LOW_VOLTAGE]);
+    expect(propagatingVoltagesByNodeId["mvsg-a"]).toEqual([
+      DEFAULT_MEDIUM_VOLTAGE
+    ]);
+  });
+
   it("treats generator as a root source and energizes downstream nodes", () => {
-    const nodes = [generatorNode("gen-a"), mvsgNode("mvsg-a"), loadNode("load-a")];
+    const nodes = [
+      generatorNode("gen-a"),
+      mvsgNode("mvsg-a"),
+      loadNode("load-a", { nominalVoltage: DEFAULT_MEDIUM_VOLTAGE })
+    ];
     const edges = [
       breakerEdge("e1", "gen-a", "mvsg-a", "closed"),
       breakerEdge("e2", "mvsg-a", "load-a", "closed")
@@ -454,7 +591,7 @@ describe("evaluatePowerFlow", () => {
 
   it("propagates generator power through switchboard and transfer switch to mechanical load", () => {
     const nodes = [
-      generatorNode("gen-a"),
+      generatorNode("gen-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
       switchboardNode("swbd-a"),
       transferSwitchNode("ats-a"),
       mechanicalNode("fcw-a")
@@ -478,8 +615,11 @@ describe("evaluatePowerFlow", () => {
 
   it("conducts only the primary ATS feeder when the transfer switch is set to primary", () => {
     const nodes = [
-      utilityNode("utility-a"),
-      generatorNode("gen-a", { syncGroup: "GEN-BUS" }),
+      utilityNode("utility-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      generatorNode("gen-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        syncGroup: "GEN-BUS"
+      }),
       transferSwitchNode("ats-a", {
         activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
       }),
@@ -519,8 +659,14 @@ describe("evaluatePowerFlow", () => {
 
   it("conducts only the emergency ATS feeder when the transfer switch is set to emergency", () => {
     const nodes = [
-      utilityNode("utility-a", { syncGroup: "GRID-A" }),
-      generatorNode("gen-a", { syncGroup: "GEN-BUS" }),
+      utilityNode("utility-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        syncGroup: "GRID-A"
+      }),
+      generatorNode("gen-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        syncGroup: "GEN-BUS"
+      }),
       transferSwitchNode("ats-a", {
         activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
       }),
@@ -562,8 +708,14 @@ describe("evaluatePowerFlow", () => {
 
   it("prevents phase conflict when unsynchronized sources land on opposite ATS inputs", () => {
     const nodes = [
-      utilityNode("utility-a", { syncGroup: "GRID-A" }),
-      generatorNode("gen-a", { syncGroup: "GRID-B" }),
+      utilityNode("utility-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        syncGroup: "GRID-A"
+      }),
+      generatorNode("gen-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        syncGroup: "GRID-B"
+      }),
       transferSwitchNode("ats-a", {
         activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
       }),
@@ -591,8 +743,14 @@ describe("evaluatePowerFlow", () => {
 
   it("still blocks the inactive ATS feeder when it is a standard wire", () => {
     const nodes = [
-      utilityNode("utility-a", { syncGroup: "GRID-A" }),
-      generatorNode("gen-a", { syncGroup: "GRID-B" }),
+      utilityNode("utility-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        syncGroup: "GRID-A"
+      }),
+      generatorNode("gen-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        syncGroup: "GRID-B"
+      }),
       transferSwitchNode("ats-a", {
         activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
       }),
@@ -646,6 +804,28 @@ describe("evaluatePowerFlow", () => {
     expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
     expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
     expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+  });
+
+  it("tracks simultaneous phase conflict and voltage fault while rendering voltage fault dominant", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      utilityNode("utility-b"),
+      switchboardNode("swbd-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "swbd-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "utility-b", "swbd-a", BREAKER_STATE.CLOSED)
+    ];
+    const { faultedEdgeIds, powerFlagsByNodeId, powerStateByNodeId } =
+      evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.VOLTAGE_FAULT);
+    expect(powerFlagsByNodeId["swbd-a"]).toMatchObject({
+      isLive: true,
+      hasPhaseConflict: true,
+      hasVoltageFault: true
+    });
+    expect(faultedEdgeIds).toEqual(["e1", "e2"]);
   });
 
   it("allows a utility and generator with the same sync group to parallel safely", () => {
@@ -746,6 +926,19 @@ describe("createTopologyKey", () => {
     expect(keyLabelA).toBe(keyLabelB);
   });
 
+  it("changes when a node voltage changes", () => {
+    const nodesMediumVoltage = [utilityNode("utility-a"), mvsgNode("mvsg-a")];
+    const nodesLowVoltage = [
+      utilityNode("utility-a"),
+      mvsgNode("mvsg-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE })
+    ];
+    const edges = [breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED)];
+    const mediumVoltageKey = createTopologyKey(nodesMediumVoltage, edges);
+    const lowVoltageKey = createTopologyKey(nodesLowVoltage, edges);
+
+    expect(mediumVoltageKey).not.toBe(lowVoltageKey);
+  });
+
   it("changes when a transfer switch active source changes", () => {
     const nodesPrimary = [
       utilityNode("utility-a"),
@@ -803,5 +996,59 @@ describe("createTopologyKey", () => {
     const standardKey = createTopologyKey(nodes, standardEdges);
 
     expect(breakerKey).not.toBe(standardKey);
+  });
+});
+
+describe("normalizeGraphState voltage metadata", () => {
+  it("preserves numeric voltage metadata and parses legacy display strings", () => {
+    const normalizedGraph = normalizeGraphState({
+      nodes: [
+        {
+          id: "utility-a",
+          type: "utility",
+          data: {
+            label: "utility-a",
+            voltage: "34.5 kV",
+            syncGroup: "GRID-A"
+          },
+          position: { x: 0, y: 0 }
+        },
+        {
+          id: "ptx-a",
+          type: "ptx",
+          data: {
+            label: "ptx-a",
+            ratio: "12.47 kV / 480 V"
+          },
+          position: { x: 0, y: 0 }
+        },
+        {
+          id: "load-a",
+          type: "load",
+          data: {
+            label: "load-a",
+            nominalVoltage: 120
+          },
+          position: { x: 0, y: 0 }
+        }
+      ],
+      edges: []
+    });
+    const normalizedUtilityNode = normalizedGraph.nodes.find(
+      (node) => node.id === "utility-a"
+    );
+    const normalizedPtxNode = normalizedGraph.nodes.find(
+      (node) => node.id === "ptx-a"
+    );
+    const normalizedLoadNode = normalizedGraph.nodes.find(
+      (node) => node.id === "load-a"
+    );
+
+    expect(normalizedUtilityNode.data.nominalVoltage).toBe(DEFAULT_MEDIUM_VOLTAGE);
+    expect(normalizedUtilityNode.data.voltage).toBeUndefined();
+    expect(normalizedPtxNode.data.primaryVoltage).toBe(12470);
+    expect(normalizedPtxNode.data.secondaryVoltage).toBe(DEFAULT_LOW_VOLTAGE);
+    expect(normalizedPtxNode.data.ratio).toBeUndefined();
+    expect(normalizedLoadNode.data.nominalVoltage).toBe(120);
   });
 });

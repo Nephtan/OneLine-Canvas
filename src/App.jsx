@@ -23,6 +23,7 @@ import usePowerFlow from "./hooks/usePowerFlow";
 import { BREAKER_STATE, EDGE_POWER_STATE } from "./engine/powerFlow";
 import EquipmentPalette, { DRAG_MIME_TYPE } from "./components/EquipmentPalette";
 import ScadaPanel from "./components/ScadaPanel";
+import NodePropertiesModal from "./components/NodePropertiesModal";
 import {
   getDefaultNodeData,
   isSourceNodeType,
@@ -280,12 +281,15 @@ function App() {
     )
   );
   const [pendingMopAction, setPendingMopAction] = useState(null);
+  const [activePropertiesNodeId, setActivePropertiesNodeId] = useState(null);
   const reactFlowInstanceRef = useRef(null);
   const importInputRef = useRef(null);
   const skipNextAutosaveRef = useRef(false);
   const {
     powerStateByNodeId,
+    powerFlagsByNodeId,
     sourceIdsByNodeId,
+    propagatingVoltagesByNodeId,
     edgePowerStateByEdgeId,
     faultedEdgeIds
   } =
@@ -349,6 +353,18 @@ function App() {
       return didTripAnyEdge ? nextEdges : currentEdges;
     });
   }, [faultedEdgeIds, setEdges]);
+
+  useEffect(() => {
+    if (!activePropertiesNodeId) {
+      return;
+    }
+
+    const activeNodeStillExists = nodes.some((node) => node.id === activePropertiesNodeId);
+
+    if (!activeNodeStillExists) {
+      setActivePropertiesNodeId(null);
+    }
+  }, [nodes, activePropertiesNodeId]);
 
   useEffect(() => {
     if (!pendingMopAction || !mopBaseSnapshot || faultedEdgeIds.length > 0) {
@@ -449,6 +465,36 @@ function App() {
           };
         })
       );
+    },
+    [setNodes]
+  );
+
+  const openNodeProperties = useCallback((nodeId) => {
+    setActivePropertiesNodeId(nodeId);
+  }, []);
+
+  const closeNodeProperties = useCallback(() => {
+    setActivePropertiesNodeId(null);
+  }, []);
+
+  const applyNodeProperties = useCallback(
+    (nodeId, nextProperties) => {
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (node.id !== nodeId) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...normalizeNodeData(node),
+              ...nextProperties
+            }
+          };
+        })
+      );
+      setActivePropertiesNodeId(null);
     },
     [setNodes]
   );
@@ -715,7 +761,9 @@ function App() {
         data: {
           ...normalizeNodeData(node),
           powerState: powerStateByNodeId[node.id] ?? "Dead",
+          powerFlags: powerFlagsByNodeId[node.id],
           sourceIds: sourceIdsByNodeId[node.id] ?? [],
+          propagatingVoltages: propagatingVoltagesByNodeId[node.id] ?? [],
           onRenameLabel: (nextLabel) => renameNodeLabel(node.id, nextLabel),
           onToggleSourceOnline:
             isSourceNodeType(node.type)
@@ -728,6 +776,7 @@ function App() {
             ? (nextActiveSource) =>
                 handleTransferSwitchThrowRequest(node.id, nextActiveSource)
             : undefined,
+          onOpenProperties: () => openNodeProperties(node.id),
           onDeleteNode: () => {
             void handleDeleteNodeRequest(node.id);
           }
@@ -736,11 +785,14 @@ function App() {
     [
       nodes,
       powerStateByNodeId,
+      powerFlagsByNodeId,
       sourceIdsByNodeId,
+      propagatingVoltagesByNodeId,
       renameNodeLabel,
       handleSourceToggleRequest,
       changeNodeSyncGroup,
       handleTransferSwitchThrowRequest,
+      openNodeProperties,
       handleDeleteNodeRequest
     ]
   );
@@ -837,6 +889,7 @@ function App() {
         const normalizedAppState = normalizePersistedAppState(parsed);
         setIsRecordingMop(false);
         setPendingMopAction(null);
+        setActivePropertiesNodeId(null);
         setNodes(normalizedAppState.nodes);
         setEdges(normalizedAppState.edges);
         setMopSteps(normalizedAppState.mopSteps);
@@ -865,6 +918,7 @@ function App() {
     skipNextAutosaveRef.current = true;
     setIsRecordingMop(false);
     setPendingMopAction(null);
+    setActivePropertiesNodeId(null);
     setMopSteps([]);
     setMopBaseSnapshot(null);
     setMopPlaybackIndex(0);
@@ -956,6 +1010,11 @@ function App() {
     [edgeDrawMode]
   );
 
+  const activePropertiesNode = useMemo(
+    () => nodes.find((node) => node.id === activePropertiesNodeId) ?? null,
+    [nodes, activePropertiesNodeId]
+  );
+
   return (
     <div className="fixed inset-0 h-screen w-screen bg-slate-950 font-mono text-slate-100">
       <input
@@ -1023,10 +1082,18 @@ function App() {
           </ReactFlow>
 
           <div className="pointer-events-none absolute left-4 top-4 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs tracking-wide text-slate-300">
-            OneLine-Canvas Phase 14 Canvas Ergonomics
+            OneLine-Canvas Phase 15 Voltage Reality Check
           </div>
         </div>
       </div>
+
+      {activePropertiesNode ? (
+        <NodePropertiesModal
+          node={activePropertiesNode}
+          onApply={applyNodeProperties}
+          onClose={closeNodeProperties}
+        />
+      ) : null}
     </div>
   );
 }
