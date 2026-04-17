@@ -124,24 +124,33 @@ function mechanicalNode(id, options = {}) {
 }
 
 function breakerEdge(id, source, target, breakerState, handleOptions = {}) {
+  const { data: edgeData = {}, ...nextHandleOptions } = handleOptions;
+
   return {
     id,
     type: CANVAS_EDGE_TYPE.BREAKER,
     source,
     target,
-    ...handleOptions,
-    data: { breakerState }
+    ...nextHandleOptions,
+    data: {
+      breakerState,
+      ...edgeData
+    }
   };
 }
 
 function standardEdge(id, source, target, handleOptions = {}) {
+  const { data: edgeData = {}, ...nextHandleOptions } = handleOptions;
+
   return {
     id,
     type: CANVAS_EDGE_TYPE.STANDARD,
     source,
     target,
-    ...handleOptions,
-    data: {}
+    ...nextHandleOptions,
+    data: {
+      ...edgeData
+    }
   };
 }
 
@@ -412,6 +421,46 @@ describe("evaluatePowerFlow", () => {
     expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.DEAD);
     expect(edgePowerStateByEdgeId["wire-1"]).toBe(EDGE_POWER_STATE.ENERGIZED);
     expect(edgePowerStateByEdgeId["breaker-1"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+  });
+
+  it("ignores visual-only edge routing waypoints during electrical evaluation", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      mvsgNode("mvsg-a"),
+      loadNode("load-a", { nominalVoltage: DEFAULT_MEDIUM_VOLTAGE })
+    ];
+    const unroutedEdges = [
+      breakerEdge("breaker-1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      standardEdge("wire-1", "mvsg-a", "load-a")
+    ];
+    const routedEdges = [
+      breakerEdge("breaker-1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED, {
+        data: {
+          layout: {
+            waypoints: [{ id: "breaker-waypoint", x: 240, y: 144 }]
+          }
+        }
+      }),
+      standardEdge("wire-1", "mvsg-a", "load-a", {
+        data: {
+          layout: {
+            waypoints: [
+              { id: "wire-waypoint-a", x: 336, y: 168 },
+              { id: "wire-waypoint-b", x: 336, y: 264 }
+            ]
+          }
+        }
+      })
+    ];
+    const unroutedResult = evaluatePowerFlow(nodes, unroutedEdges);
+    const routedResult = evaluatePowerFlow(nodes, routedEdges);
+
+    expect(routedResult.powerStateByNodeId).toEqual(unroutedResult.powerStateByNodeId);
+    expect(routedResult.sourceIdsByNodeId).toEqual(unroutedResult.sourceIdsByNodeId);
+    expect(routedResult.edgePowerStateByEdgeId).toEqual(
+      unroutedResult.edgePowerStateByEdgeId
+    );
+    expect(routedResult.faultedEdgeIds).toEqual(unroutedResult.faultedEdgeIds);
   });
 
   it("energizes PTX and Load in a downstream chain from one utility", () => {
@@ -1347,6 +1396,35 @@ describe("createTopologyKey", () => {
     const standardKey = createTopologyKey(nodes, standardEdges);
 
     expect(breakerKey).not.toBe(standardKey);
+  });
+
+  it("ignores edge waypoint layout changes so visual reroutes do not invalidate the key", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a")];
+    const straightEdges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED, {
+        data: {
+          layout: {
+            waypoints: []
+          }
+        }
+      })
+    ];
+    const routedEdges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED, {
+        data: {
+          layout: {
+            waypoints: [
+              { id: "route-a", x: 216, y: 144 },
+              { id: "route-b", x: 216, y: 240 }
+            ]
+          }
+        }
+      })
+    ];
+    const straightKey = createTopologyKey(nodes, straightEdges);
+    const routedKey = createTopologyKey(nodes, routedEdges);
+
+    expect(straightKey).toBe(routedKey);
   });
 });
 

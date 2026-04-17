@@ -1,5 +1,5 @@
-import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from "@xyflow/react";
 import EdgeDeleteButton from "../components/EdgeDeleteButton";
+import OrthogonalEdge from "../components/OrthogonalEdge";
 import { EDGE_POWER_STATE } from "../engine/powerFlow";
 
 const STANDARD_DE_ENERGIZED_EDGE_STYLE = {
@@ -22,23 +22,11 @@ const STANDARD_CONFLICT_EDGE_STYLE = {
 
 function StandardEdge({
   id,
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  sourcePosition,
-  targetPosition,
-  data
+  data,
+  selected,
+  ...edgeProps
 }) {
   const edgePowerState = data?.powerState ?? EDGE_POWER_STATE.DE_ENERGIZED;
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition
-  });
 
   const edgeStyle =
     edgePowerState === EDGE_POWER_STATE.PHASE_CONFLICT
@@ -48,26 +36,19 @@ function StandardEdge({
         : STANDARD_DE_ENERGIZED_EDGE_STYLE;
 
   return (
-    <>
-      <BaseEdge
-        id={id}
-        path={edgePath}
-        style={edgeStyle}
-        interactionWidth={34}
-      />
-
-      <EdgeLabelRenderer>
-        <div
-          style={{ left: `${labelX}px`, top: `${labelY}px` }}
-          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-        >
-          <EdgeDeleteButton
-            title={`Delete wire ${id}`}
-            onDelete={data?.onDeleteEdge}
-          />
-        </div>
-      </EdgeLabelRenderer>
-    </>
+    <OrthogonalEdge
+      id={id}
+      data={data}
+      selected={selected}
+      edgeStyle={edgeStyle}
+      label={
+        <EdgeDeleteButton
+          title={`Delete wire ${id}`}
+          onDelete={data?.onDeleteEdge}
+        />
+      }
+      {...edgeProps}
+    />
   );
 }
 

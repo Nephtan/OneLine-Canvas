@@ -4,6 +4,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  SelectionMode,
   ReactFlow,
   useEdgesState,
   useNodesState
@@ -39,6 +40,16 @@ import {
   EDGE_TYPE,
   normalizeCanvasEdgeType
 } from "./topology/edgeTypes";
+import {
+  CANVAS_GRID_SIZE,
+  CANVAS_SNAP_GRID,
+  createEdgeWaypointId,
+  getEdgeWaypoints,
+  normalizeCanvasEdgeData,
+  normalizeEdgeLayout,
+  snapCanvasPoint,
+  translateEdgeWaypoints
+} from "./canvas/edgeLayout";
 
 const nodeTypes = {
   utility: UtilityNode,
@@ -64,6 +75,54 @@ const MOP_ACTION_TYPE = {
   DELETE_NODE: "DELETE_NODE",
   DELETE_EDGE: "DELETE_EDGE"
 };
+
+function getDefaultEdgeData(edgeType) {
+  const normalizedEdgeType = normalizeCanvasEdgeType(edgeType);
+
+  return normalizedEdgeType === EDGE_TYPE.BREAKER
+    ? {
+        breakerState: BREAKER_STATE.OPEN,
+        layout: { waypoints: [] }
+      }
+    : {
+        layout: { waypoints: [] }
+      };
+}
+
+function createMovingNodeSessionKey(nodes) {
+  return nodes
+    .map((node) => node.id)
+    .sort()
+    .join("|");
+}
+
+function deriveSharedMovementDelta(initialPositionsByNodeId, movingNodes) {
+  let sharedDelta = null;
+
+  for (const node of movingNodes) {
+    const initialPosition = initialPositionsByNodeId[node.id];
+
+    if (!initialPosition) {
+      continue;
+    }
+
+    const nextDelta = {
+      x: node.position.x - initialPosition.x,
+      y: node.position.y - initialPosition.y
+    };
+
+    if (sharedDelta === null) {
+      sharedDelta = nextDelta;
+      continue;
+    }
+
+    if (sharedDelta.x !== nextDelta.x || sharedDelta.y !== nextDelta.y) {
+      return null;
+    }
+  }
+
+  return sharedDelta ?? { x: 0, y: 0 };
+}
 
 function isGraphStateShape(value) {
   return (
@@ -282,9 +341,11 @@ function App() {
   );
   const [pendingMopAction, setPendingMopAction] = useState(null);
   const [activePropertiesNodeId, setActivePropertiesNodeId] = useState(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState(null);
   const reactFlowInstanceRef = useRef(null);
   const importInputRef = useRef(null);
   const skipNextAutosaveRef = useRef(false);
+  const movingEdgeLayoutRef = useRef(null);
   const {
     powerStateByNodeId,
     powerFlagsByNodeId,
@@ -365,6 +426,18 @@ function App() {
       setActivePropertiesNodeId(null);
     }
   }, [nodes, activePropertiesNodeId]);
+
+  useEffect(() => {
+    if (!selectedEdgeId) {
+      return;
+    }
+
+    const selectedEdgeStillExists = edges.some((edge) => edge.id === selectedEdgeId);
+
+    if (!selectedEdgeStillExists) {
+      setSelectedEdgeId(null);
+    }
+  }, [edges, selectedEdgeId]);
 
   useEffect(() => {
     if (!pendingMopAction || !mopBaseSnapshot || faultedEdgeIds.length > 0) {
@@ -650,6 +723,7 @@ function App() {
 
       setIsRecordingMop(false);
       setPendingMopAction(null);
+      setSelectedEdgeId(null);
       setNodes(clonedSnapshot.nodes);
       setEdges(clonedSnapshot.edges);
       setMopPlaybackIndex(nextPlaybackIndex);
@@ -754,6 +828,286 @@ function App() {
     [edges, isRecordingMop]
   );
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !selectedEdgeId) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      const eventTarget = event.target;
+      const isTextInputTarget =
+        eventTarget instanceof HTMLElement &&
+        (eventTarget.tagName === "INPUT" ||
+          eventTarget.tagName === "TEXTAREA" ||
+          eventTarget.tagName === "SELECT" ||
+          eventTarget.isContentEditable);
+
+      if (
+        isTextInputTarget ||
+        (event.key !== "Delete" && event.key !== "Backspace")
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleDeleteEdgeRequest(selectedEdgeId);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedEdgeId, handleDeleteEdgeRequest]);
+
+  const addEdgeWaypoint = useCallback(
+    (edgeId, insertIndex, position) => {
+      setEdges((currentEdges) =>
+        currentEdges.map((edge) => {
+          if (edge.id !== edgeId) {
+            return edge;
+          }
+
+          const normalizedData = normalizeCanvasEdgeData(edge.data);
+          const nextWaypoints = normalizedData.layout.waypoints.slice();
+
+          nextWaypoints.splice(Math.max(0, insertIndex), 0, {
+            id: createEdgeWaypointId(),
+            ...snapCanvasPoint(position)
+          });
+
+          return {
+            ...edge,
+            data: {
+              ...normalizedData,
+              layout: normalizeEdgeLayout({ waypoints: nextWaypoints })
+            }
+          };
+        })
+      );
+    },
+    [setEdges]
+  );
+
+  const moveEdgeWaypoint = useCallback(
+    (edgeId, waypointId, nextPosition) => {
+      setEdges((currentEdges) =>
+        currentEdges.map((edge) => {
+          if (edge.id !== edgeId) {
+            return edge;
+          }
+
+          const normalizedData = normalizeCanvasEdgeData(edge.data);
+          let didMoveWaypoint = false;
+          const snappedPosition = snapCanvasPoint(nextPosition);
+          const nextWaypoints = normalizedData.layout.waypoints.map((waypoint) => {
+            if (waypoint.id !== waypointId) {
+              return waypoint;
+            }
+
+            didMoveWaypoint = true;
+
+            return {
+              ...waypoint,
+              x: snappedPosition.x,
+              y: snappedPosition.y
+            };
+          });
+
+          if (!didMoveWaypoint) {
+            return edge;
+          }
+
+          return {
+            ...edge,
+            data: {
+              ...normalizedData,
+              layout: normalizeEdgeLayout({ waypoints: nextWaypoints })
+            }
+          };
+        })
+      );
+    },
+    [setEdges]
+  );
+
+  const removeEdgeWaypoint = useCallback(
+    (edgeId, waypointId) => {
+      setEdges((currentEdges) =>
+        currentEdges.map((edge) => {
+          if (edge.id !== edgeId) {
+            return edge;
+          }
+
+          const normalizedData = normalizeCanvasEdgeData(edge.data);
+          const nextWaypoints = normalizedData.layout.waypoints.filter(
+            (waypoint) => waypoint.id !== waypointId
+          );
+
+          if (nextWaypoints.length === normalizedData.layout.waypoints.length) {
+            return edge;
+          }
+
+          return {
+            ...edge,
+            data: {
+              ...normalizedData,
+              layout: normalizeEdgeLayout({ waypoints: nextWaypoints })
+            }
+          };
+        })
+      );
+    },
+    [setEdges]
+  );
+
+  const beginMovingRoutedEdges = useCallback(
+    (movingNodes) => {
+      if (!Array.isArray(movingNodes) || movingNodes.length === 0) {
+        return;
+      }
+
+      const movingNodeIdSet = new Set(movingNodes.map((node) => node.id));
+      const baseWaypointsByEdgeId = {};
+
+      edges.forEach((edge) => {
+        if (
+          movingNodeIdSet.has(edge.source) &&
+          movingNodeIdSet.has(edge.target)
+        ) {
+          const waypoints = getEdgeWaypoints(edge);
+
+          if (waypoints.length > 0) {
+            baseWaypointsByEdgeId[edge.id] = waypoints;
+          }
+        }
+      });
+
+      movingEdgeLayoutRef.current = {
+        sessionKey: createMovingNodeSessionKey(movingNodes),
+        initialPositionsByNodeId: Object.fromEntries(
+          movingNodes.map((node) => [
+            node.id,
+            { x: node.position.x, y: node.position.y }
+          ])
+        ),
+        baseWaypointsByEdgeId,
+        lastDelta: { x: 0, y: 0 }
+      };
+    },
+    [edges]
+  );
+
+  const updateMovingRoutedEdges = useCallback(
+    (movingNodes) => {
+      if (!Array.isArray(movingNodes) || movingNodes.length === 0) {
+        return;
+      }
+
+      const sessionKey = createMovingNodeSessionKey(movingNodes);
+
+      if (movingEdgeLayoutRef.current?.sessionKey !== sessionKey) {
+        beginMovingRoutedEdges(movingNodes);
+      }
+
+      const movingLayoutSession = movingEdgeLayoutRef.current;
+
+      if (!movingLayoutSession) {
+        return;
+      }
+
+      const nextDelta = deriveSharedMovementDelta(
+        movingLayoutSession.initialPositionsByNodeId,
+        movingNodes
+      );
+
+      if (
+        nextDelta === null ||
+        (movingLayoutSession.lastDelta.x === nextDelta.x &&
+          movingLayoutSession.lastDelta.y === nextDelta.y)
+      ) {
+        return;
+      }
+
+      if (Object.keys(movingLayoutSession.baseWaypointsByEdgeId).length > 0) {
+        setEdges((currentEdges) =>
+          currentEdges.map((edge) => {
+            const baseWaypoints = movingLayoutSession.baseWaypointsByEdgeId[edge.id];
+
+            if (!baseWaypoints) {
+              return edge;
+            }
+
+            const normalizedData = normalizeCanvasEdgeData(edge.data);
+
+            return {
+              ...edge,
+              data: {
+                ...normalizedData,
+                layout: normalizeEdgeLayout({
+                  waypoints: translateEdgeWaypoints(baseWaypoints, nextDelta)
+                })
+              }
+            };
+          })
+        );
+      }
+
+      movingLayoutSession.lastDelta = nextDelta;
+    },
+    [beginMovingRoutedEdges, setEdges]
+  );
+
+  const finishMovingRoutedEdges = useCallback(
+    (movingNodes) => {
+      updateMovingRoutedEdges(movingNodes);
+      movingEdgeLayoutRef.current = null;
+    },
+    [updateMovingRoutedEdges]
+  );
+
+  const handleNodeDragStart = useCallback(
+    (_event, _node, movingNodes) => {
+      beginMovingRoutedEdges(movingNodes);
+    },
+    [beginMovingRoutedEdges]
+  );
+
+  const handleNodeDrag = useCallback(
+    (_event, _node, movingNodes) => {
+      updateMovingRoutedEdges(movingNodes);
+    },
+    [updateMovingRoutedEdges]
+  );
+
+  const handleNodeDragStop = useCallback(
+    (_event, _node, movingNodes) => {
+      finishMovingRoutedEdges(movingNodes);
+    },
+    [finishMovingRoutedEdges]
+  );
+
+  const handleSelectionDragStart = useCallback(
+    (_event, movingNodes) => {
+      beginMovingRoutedEdges(movingNodes);
+    },
+    [beginMovingRoutedEdges]
+  );
+
+  const handleSelectionDrag = useCallback(
+    (_event, movingNodes) => {
+      updateMovingRoutedEdges(movingNodes);
+    },
+    [updateMovingRoutedEdges]
+  );
+
+  const handleSelectionDragStop = useCallback(
+    (_event, movingNodes) => {
+      finishMovingRoutedEdges(movingNodes);
+    },
+    [finishMovingRoutedEdges]
+  );
+
   const renderNodes = useMemo(
     () =>
       nodes.map((node) => ({
@@ -801,16 +1155,60 @@ function App() {
     () =>
       edges.map((edge) => ({
         ...edge,
+        selectable: false,
+        selected: edge.id === selectedEdgeId,
         data: {
-          ...edge.data,
+          ...normalizeCanvasEdgeData(edge.data),
           powerState:
             edgePowerStateByEdgeId[edge.id] ?? EDGE_POWER_STATE.DE_ENERGIZED,
+          onAddWaypoint: (insertIndex, position) => {
+            addEdgeWaypoint(edge.id, insertIndex, position);
+          },
+          onMoveWaypoint: (waypointId, position) => {
+            moveEdgeWaypoint(edge.id, waypointId, position);
+          },
+          onRemoveWaypoint: (waypointId) => {
+            removeEdgeWaypoint(edge.id, waypointId);
+          },
+          onToggleBreaker:
+            normalizeCanvasEdgeType(edge.type) === EDGE_TYPE.BREAKER
+              ? () => {
+                  const nextState = getNextBreakerState(edge.data?.breakerState);
+
+                  if (isRecordingMop) {
+                    setPendingMopAction({
+                      targetId: edge.id,
+                      actionType: MOP_ACTION_TYPE.TOGGLE_BREAKER,
+                      targetState:
+                        nextState === BREAKER_STATE.CLOSED
+                          ? BREAKER_STATE.CLOSED
+                          : BREAKER_STATE.OPEN,
+                      actionText:
+                        nextState === BREAKER_STATE.CLOSED
+                          ? `Closed Breaker ${edge.id}`
+                          : `Opened Breaker ${edge.id}`
+                    });
+                  }
+
+                  applyBreakerState(edge.id, nextState);
+                }
+              : undefined,
           onDeleteEdge: () => {
             void handleDeleteEdgeRequest(edge.id);
           }
         }
       })),
-    [edges, edgePowerStateByEdgeId, handleDeleteEdgeRequest]
+    [
+      edges,
+      selectedEdgeId,
+      edgePowerStateByEdgeId,
+      addEdgeWaypoint,
+      moveEdgeWaypoint,
+      removeEdgeWaypoint,
+      isRecordingMop,
+      applyBreakerState,
+      handleDeleteEdgeRequest
+    ]
   );
 
   const onConnect = useCallback(
@@ -821,12 +1219,7 @@ function App() {
           {
             ...connection,
             type: nextEdgeType,
-            data:
-              nextEdgeType === EDGE_TYPE.BREAKER
-                ? {
-                    breakerState: BREAKER_STATE.OPEN
-                  }
-                : {}
+            data: getDefaultEdgeData(nextEdgeType)
           },
           currentEdges
         )
@@ -890,6 +1283,8 @@ function App() {
         setIsRecordingMop(false);
         setPendingMopAction(null);
         setActivePropertiesNodeId(null);
+        setSelectedEdgeId(null);
+        movingEdgeLayoutRef.current = null;
         setNodes(normalizedAppState.nodes);
         setEdges(normalizedAppState.edges);
         setMopSteps(normalizedAppState.mopSteps);
@@ -919,6 +1314,8 @@ function App() {
     setIsRecordingMop(false);
     setPendingMopAction(null);
     setActivePropertiesNodeId(null);
+    setSelectedEdgeId(null);
+    movingEdgeLayoutRef.current = null;
     setMopSteps([]);
     setMopBaseSnapshot(null);
     setMopPlaybackIndex(0);
@@ -947,10 +1344,12 @@ function App() {
         return;
       }
 
-      const position = reactFlowInstance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY
-      });
+      const position = snapCanvasPoint(
+        reactFlowInstance.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY
+        })
+      );
       const nodeUuid = crypto.randomUUID();
       const nodeId = `${nodeType}-${nodeUuid}`;
 
@@ -967,45 +1366,17 @@ function App() {
   );
 
   const onEdgeClick = useCallback(
-    (event, edge) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (edge.type !== "breaker") {
-        return;
-      }
-
-      const nextState = getNextBreakerState(edge.data?.breakerState);
-
-      if (isRecordingMop) {
-        setPendingMopAction({
-          targetId: edge.id,
-          actionType: MOP_ACTION_TYPE.TOGGLE_BREAKER,
-          targetState:
-            nextState === BREAKER_STATE.CLOSED
-              ? BREAKER_STATE.CLOSED
-              : BREAKER_STATE.OPEN,
-          actionText:
-            nextState === BREAKER_STATE.CLOSED
-              ? `Closed Breaker ${edge.id}`
-              : `Opened Breaker ${edge.id}`
-        });
-      }
-
-      applyBreakerState(edge.id, nextState);
+    (_event, edge) => {
+      setSelectedEdgeId(edge.id);
     },
-    [isRecordingMop, applyBreakerState]
+    []
   );
 
   const defaultEdgeOptions = useMemo(
     () => ({
       type: edgeDrawMode,
-      data:
-        edgeDrawMode === EDGE_TYPE.BREAKER
-          ? {
-              breakerState: BREAKER_STATE.OPEN
-            }
-          : {}
+      selectable: false,
+      data: getDefaultEdgeData(edgeDrawMode)
     }),
     [edgeDrawMode]
   );
@@ -1059,17 +1430,42 @@ function App() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onPaneClick={() => {
+              setSelectedEdgeId(null);
+            }}
+            onNodeClick={() => {
+              setSelectedEdgeId(null);
+            }}
+            onSelectionChange={({ nodes: selectedNodes }) => {
+              if (selectedNodes.length > 0) {
+                setSelectedEdgeId(null);
+              }
+            }}
             onEdgeClick={onEdgeClick}
+            onNodeDragStart={handleNodeDragStart}
+            onNodeDrag={handleNodeDrag}
+            onNodeDragStop={handleNodeDragStop}
+            onSelectionDragStart={handleSelectionDragStart}
+            onSelectionDrag={handleSelectionDrag}
+            onSelectionDragStop={handleSelectionDragStop}
             onInit={(instance) => {
               reactFlowInstanceRef.current = instance;
             }}
             defaultEdgeOptions={defaultEdgeOptions}
             deleteKeyCode={["Delete", "Backspace"]}
+            selectionOnDrag
+            selectionMode={SelectionMode.Full}
+            selectionKeyCode="Shift"
+            multiSelectionKeyCode="Shift"
+            panActivationKeyCode="Space"
+            panOnDrag={[1]}
+            snapToGrid
+            snapGrid={CANVAS_SNAP_GRID}
             minZoom={0.2}
             maxZoom={1.8}
             className="bg-slate-950"
           >
-            <Background gap={24} size={1} color="#334155" />
+            <Background gap={CANVAS_GRID_SIZE} size={1} color="#334155" />
             <MiniMap
               pannable
               zoomable
