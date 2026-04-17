@@ -13,6 +13,7 @@ import {
 import { normalizeVoltageValue } from "../electrical/voltage";
 import {
   TRANSFORMER_HANDLE_ID,
+  TRANSFORMER_PRIMARY_HANDLE_IDS,
   TRANSFORMER_SIDE,
   getTransformerHandleRoleForEdge,
   getTransformerSideForEdge,
@@ -250,10 +251,7 @@ function getTransformerOutgoingTransmissions(node, arrivalSide, voltage) {
 
     return [
       {
-        outgoingHandleRoles: [
-          TRANSFORMER_HANDLE_ID.PRIMARY_IN,
-          TRANSFORMER_HANDLE_ID.PRIMARY_LOOP
-        ],
+        outgoingHandleRoles: TRANSFORMER_PRIMARY_HANDLE_IDS,
         outgoingVoltage: primaryVoltage
       },
       {
@@ -270,10 +268,7 @@ function getTransformerOutgoingTransmissions(node, arrivalSide, voltage) {
 
     return [
       {
-        outgoingHandleRoles: [
-          TRANSFORMER_HANDLE_ID.PRIMARY_IN,
-          TRANSFORMER_HANDLE_ID.PRIMARY_LOOP
-        ],
+        outgoingHandleRoles: TRANSFORMER_PRIMARY_HANDLE_IDS,
         outgoingVoltage: primaryVoltage
       }
     ];

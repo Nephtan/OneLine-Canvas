@@ -6,6 +6,21 @@ import NodePropertiesButton from "../components/NodePropertiesButton";
 import { formatTransformerVoltage, formatVoltageValue } from "../electrical/voltage";
 import { TRANSFORMER_HANDLE_ID } from "../topology/transformer";
 
+const PRIMARY_TERMINALS = [
+  {
+    label: "A",
+    left: "25%",
+    targetHandleId: TRANSFORMER_HANDLE_ID.PRIMARY_IN,
+    sourceHandleId: TRANSFORMER_HANDLE_ID.PRIMARY_IN_SOURCE
+  },
+  {
+    label: "B",
+    left: "75%",
+    targetHandleId: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET,
+    sourceHandleId: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP
+  }
+];
+
 function WarningIcon({ className }) {
   return (
     <svg
@@ -105,6 +120,9 @@ function PTXNode({ data }) {
           ? "border border-amber-100 bg-amber-300"
           : "border border-violet-300/70 bg-violet-500/70";
 
+  const primaryTargetHandleClassName = `!h-2.5 !w-7 !rounded-full ${handleClassName}`;
+  const primarySourceHandleClassName = `!h-2 !w-7 !rounded-full ${handleClassName}`;
+
   const primaryBusRailClassName =
     powerState === NODE_POWER_STATE.VOLTAGE_FAULT
       ? "bg-purple-400/85 shadow-[0_0_10px_rgba(168,85,247,0.42)]"
@@ -167,40 +185,46 @@ function PTXNode({ data }) {
           ? propagatingVoltages.map((voltage) => formatVoltageValue(voltage)).join(", ")
           : "None"}
       </div>
-      <div className="relative mt-3 h-6">
+      <div className="relative mt-3 h-11">
         <div
-          className={`absolute left-2 right-2 top-3 h-1 rounded-full ${primaryBusRailClassName}`}
+          className={`absolute left-2 right-2 top-5 h-1 rounded-full ${primaryBusRailClassName}`}
         />
-        <div className="absolute left-[25%] top-0 -translate-x-1/2 text-[9px] uppercase tracking-[0.18em] text-slate-500">
-          In
-        </div>
-        <div className="absolute left-[75%] top-0 -translate-x-1/2 text-[9px] uppercase tracking-[0.18em] text-slate-500">
-          Loop
-        </div>
+        {PRIMARY_TERMINALS.map((terminal) => (
+          <div
+            key={terminal.label}
+            className="absolute inset-y-0 w-12 -translate-x-1/2"
+            style={{ left: terminal.left }}
+          >
+            <div className="absolute left-1/2 top-0 -translate-x-1/2 text-[9px] uppercase tracking-[0.18em] text-slate-500">
+              {terminal.label}
+            </div>
+            <Handle
+              id={terminal.targetHandleId}
+              type="target"
+              position={Position.Top}
+              isConnectable
+              className={primaryTargetHandleClassName}
+              style={{
+                left: "50%",
+                top: 11,
+                transform: "translate(-50%, -50%)"
+              }}
+            />
+            <Handle
+              id={terminal.sourceHandleId}
+              type="source"
+              position={Position.Top}
+              isConnectable
+              className={primarySourceHandleClassName}
+              style={{
+                left: "50%",
+                top: 29,
+                transform: "translate(-50%, -50%)"
+              }}
+            />
+          </div>
+        ))}
       </div>
-
-      <Handle
-        id={TRANSFORMER_HANDLE_ID.PRIMARY_IN}
-        type="target"
-        position={Position.Top}
-        isConnectable
-        className={`!h-2.5 !w-6 !rounded-full ${handleClassName}`}
-        style={{
-          left: "25%",
-          transform: "translate(-50%, -50%)"
-        }}
-      />
-      <Handle
-        id={TRANSFORMER_HANDLE_ID.PRIMARY_LOOP}
-        type="source"
-        position={Position.Top}
-        isConnectable
-        className={`!h-2.5 !w-6 !rounded-full ${handleClassName}`}
-        style={{
-          left: "75%",
-          transform: "translate(-50%, -50%)"
-        }}
-      />
       <Handle
         id={TRANSFORMER_HANDLE_ID.SECONDARY}
         type="source"

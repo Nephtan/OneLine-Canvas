@@ -538,6 +538,100 @@ describe("evaluatePowerFlow", () => {
     expect(edgePowerStateByEdgeId["e2"]).toBe(EDGE_POWER_STATE.ENERGIZED);
   });
 
+  it("accepts a source feeder on the PTX B-side primary target", () => {
+    const nodes = [utilityNode("utility-a"), ptxNode("ptx-a"), switchboardNode("swbd-a")];
+    const edges = [
+      breakerEdge("e1", "utility-a", "ptx-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET
+      }),
+      breakerEdge("e2", "ptx-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY
+      })
+    ];
+    const {
+      powerFlagsByNodeId,
+      powerStateByNodeId,
+      propagatingVoltagesByNodeId
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerFlagsByNodeId["ptx-a"].hasVoltageFault).toBe(false);
+    expect(powerFlagsByNodeId["swbd-a"].hasVoltageFault).toBe(false);
+    expect(propagatingVoltagesByNodeId["ptx-a"]).toEqual([
+      DEFAULT_LOW_VOLTAGE,
+      DEFAULT_MEDIUM_VOLTAGE
+    ]);
+    expect(propagatingVoltagesByNodeId["swbd-a"]).toEqual([DEFAULT_LOW_VOLTAGE]);
+  });
+
+  it("chains PTXs when the downstream landing point uses the new right-side primary target", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      ptxNode("ptx-a"),
+      ptxNode("ptx-b"),
+      switchboardNode("swbd-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "ptx-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      breakerEdge("e2", "ptx-a", "ptx-b", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN_SOURCE,
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET
+      }),
+      breakerEdge("e3", "ptx-b", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY
+      })
+    ];
+    const {
+      powerFlagsByNodeId,
+      powerStateByNodeId,
+      propagatingVoltagesByNodeId
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ptx-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerFlagsByNodeId["ptx-b"].hasVoltageFault).toBe(false);
+    expect(powerFlagsByNodeId["swbd-a"].hasVoltageFault).toBe(false);
+    expect(propagatingVoltagesByNodeId["ptx-b"]).toEqual([
+      DEFAULT_LOW_VOLTAGE,
+      DEFAULT_MEDIUM_VOLTAGE
+    ]);
+    expect(propagatingVoltagesByNodeId["swbd-a"]).toEqual([DEFAULT_LOW_VOLTAGE]);
+  });
+
+  it("keeps mixed legacy and new PTX handle corridors backward compatible", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      ptxNode("ptx-a"),
+      ptxNode("ptx-b"),
+      switchboardNode("swbd-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "ptx-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      breakerEdge("e2", "ptx-a", "ptx-b", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP,
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET
+      }),
+      breakerEdge("e3", "ptx-b", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY
+      })
+    ];
+    const { edgePowerStateByEdgeId, powerStateByNodeId } = evaluatePowerFlow(
+      nodes,
+      edges
+    );
+
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ptx-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(edgePowerStateByEdgeId["e2"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+  });
+
   it("steps a chained PTX corridor down on the downstream transformer secondary", () => {
     const nodes = [
       utilityNode("utility-a"),
@@ -693,6 +787,128 @@ describe("evaluatePowerFlow", () => {
     expect(propagatingVoltagesByNodeId["swbd-a"]).toEqual([DEFAULT_LOW_VOLTAGE]);
     expect(propagatingVoltagesByNodeId["mvsg-a"]).toEqual([
       DEFAULT_MEDIUM_VOLTAGE
+    ]);
+  });
+
+  it("propagates reverse PTX backfeed across the new dual-terminal primary bus", () => {
+    const nodes = [
+      generatorNode("gen-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      switchboardNode("swbd-a"),
+      ptxNode("ptx-b"),
+      ptxNode("ptx-a"),
+      mvsgNode("mvsg-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "gen-a", "swbd-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "ptx-b", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY
+      }),
+      breakerEdge("e3", "ptx-b", "ptx-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN_SOURCE,
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET
+      }),
+      breakerEdge("e4", "ptx-a", "mvsg-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP
+      })
+    ];
+    const {
+      powerFlagsByNodeId,
+      powerStateByNodeId,
+      propagatingVoltagesByNodeId
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ptx-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerFlagsByNodeId["ptx-a"].hasVoltageFault).toBe(false);
+    expect(powerFlagsByNodeId["ptx-b"].hasVoltageFault).toBe(false);
+    expect(propagatingVoltagesByNodeId["mvsg-a"]).toEqual([
+      DEFAULT_MEDIUM_VOLTAGE
+    ]);
+  });
+
+  it("keeps opposite-end PTX feeders isolated when the middle breaker is open", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      ptxNode("ptx-a"),
+      ptxNode("ptx-b"),
+      generatorNode("gen-a", { syncGroup: "GRID-B" })
+    ];
+    const edges = [
+      breakerEdge("left-feed", "utility-a", "ptx-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      breakerEdge("middle-open", "ptx-a", "ptx-b", BREAKER_STATE.OPEN, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP,
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET
+      }),
+      breakerEdge("right-feed", "gen-a", "ptx-b", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET
+      })
+    ];
+    const {
+      edgePowerStateByEdgeId,
+      faultedEdgeIds,
+      powerFlagsByNodeId,
+      powerStateByNodeId
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ptx-b"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerFlagsByNodeId["ptx-a"].hasPhaseConflict).toBe(false);
+    expect(powerFlagsByNodeId["ptx-b"].hasPhaseConflict).toBe(false);
+    expect(edgePowerStateByEdgeId["left-feed"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(edgePowerStateByEdgeId["middle-open"]).toBe(
+      EDGE_POWER_STATE.DE_ENERGIZED
+    );
+    expect(edgePowerStateByEdgeId["right-feed"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(faultedEdgeIds).toEqual([]);
+  });
+
+  it("preserves phase conflict behavior when opposite-end PTX feeders are tied through a closed middle breaker", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      ptxNode("ptx-a"),
+      ptxNode("ptx-b"),
+      generatorNode("gen-a", { syncGroup: "GRID-B" })
+    ];
+    const edges = [
+      breakerEdge("left-feed", "utility-a", "ptx-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      breakerEdge("middle-closed", "ptx-a", "ptx-b", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP,
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET
+      }),
+      breakerEdge("right-feed", "gen-a", "ptx-b", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_LOOP_TARGET
+      })
+    ];
+    const {
+      edgePowerStateByEdgeId,
+      faultedEdgeIds,
+      powerFlagsByNodeId,
+      powerStateByNodeId
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(powerStateByNodeId["ptx-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(powerFlagsByNodeId["ptx-a"].hasPhaseConflict).toBe(true);
+    expect(powerFlagsByNodeId["ptx-b"].hasPhaseConflict).toBe(true);
+    expect(edgePowerStateByEdgeId["left-feed"]).toBe(
+      EDGE_POWER_STATE.PHASE_CONFLICT
+    );
+    expect(edgePowerStateByEdgeId["middle-closed"]).toBe(
+      EDGE_POWER_STATE.PHASE_CONFLICT
+    );
+    expect(edgePowerStateByEdgeId["right-feed"]).toBe(
+      EDGE_POWER_STATE.PHASE_CONFLICT
+    );
+    expect(faultedEdgeIds).toEqual([
+      "left-feed",
+      "middle-closed",
+      "right-feed"
     ]);
   });
 
