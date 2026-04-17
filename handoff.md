@@ -22,6 +22,7 @@
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
+| Maintenance | `working-tree` | `2026-04-17` | `Rewrite README for accurate public repo presentation` | Implemented |
 
 ## Timeline of Architectural Evolution
 
@@ -299,6 +300,19 @@
 - Unresolved items at phase end:
   - None specific to dependency-check command execution on Windows in the current workspace.
 
+### Maintenance Update: README Public Repo Refresh
+- Revision: `working-tree`
+- Date: `2026-04-17`
+- Subject: `Rewrite README for accurate public repo presentation`
+- Major additions:
+  - Reworked `README.md` into a public-facing project overview with explicit current capabilities, setup commands, usage steps, supporting-doc links, and current limitations.
+  - Removed repo-local path assumptions from the setup instructions and aligned the public command list with the actual `package.json` scripts.
+  - Documented the current `npm run check:deps` clean-workspace caveat so the README does not overstate current dependency-check behavior.
+- Engine-state evolution:
+  - No graph traversal, protection, synchronization, or React Flow behavior changed.
+- Unresolved items at phase end:
+  - `npm run check:deps` still treats Vite temp directories such as `.vite` and `.vite-temp` as extraneous top-level packages after normal tool activity.
+
 ## Cumulative System State (Latest)
 
 ### Completed Architectural Changes
@@ -307,6 +321,7 @@
 - Documentation and repo metadata:
   - Added `DEPENDENCIES.md` as a quick dependency inventory derived from the existing npm manifest and lockfile.
   - Added Windows-first setup guidance to `README.md` plus a repo-local dependency validation command.
+  - Reworked `README.md` into an accurate public repo landing page with a docs map, current-status framing, command guidance, and an explicit limitations section.
 - Dynamic canvas and equipment workflow:
   - Blank-canvas sandbox with drag-drop equipment palette, user-created edges, and deletion support.
 - Source-aware dynamic power engine:
@@ -399,6 +414,7 @@
 - Source controls are now available both node-local and via SCADA, and Phase 12 adds linear scenario playback, but there is still no scripted SOO automation, batch editing, timeline branching, or timed autoplay layer.
 - ATS nodes now prevent primary/emergency source paralleling internally, but they do not yet implement automatic transfer, source-fail sensing, permissive timers, or neutral-position logic.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
+- `npm run check:deps` currently assumes a clean `node_modules`; Vite temp directories such as `.vite` and `.vite-temp` can trigger false-positive extraneous-package failures after normal dev/build/test activity.
 - Visual delete controls and connection draw-mode ergonomics are now present, but there is still no automated UI coverage for these operator workflows.
 
 ## Engine Verification and Test Coverage Snapshot

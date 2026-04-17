@@ -1,92 +1,136 @@
 # OneLine-Canvas
 
-**A visual scripting simulator for mission-critical electrical topologies.**
+**A browser-based one-line sandbox for building, switching, and stress-testing electrical topologies before the yard gets a vote.**
 
-Physics does not care about your deadlines, and electrons do not negotiate. OneLine-Canvas is an interactive node-graph simulator built for commissioning agents, MEP coordinators, and electrical engineers who need to test data center switching logic without turning a reserve electric room into a ten-million-dollar crater.
+OneLine-Canvas is a React Flow-powered simulator for commissioning agents, MEP coordinators, and electrical engineers who want to rehearse switching logic without learning the hard way on live gear. You drag equipment into the canvas, wire the topology you actually want to test, and let the engine propagate source state, backfeed, and phase conflict across the graph.
 
-Think of it as a sandbox for high-voltage paranoia. You drag gear onto the canvas (MVSGs, PTXs, Utility Grids), snap your nodes together to establish the physical bus connections, and dictate your switching logic. 
+This thing is not here to flatter bad assumptions. If you close the wrong tie, parallel unsynchronized sources, or backfeed gear you meant to isolate, the canvas will tell you exactly how ugly the result is.
 
-The simulation engine continuously propagates power states across the directed graph. It does not grade on a curve. If your virtual main-tie-main logic backfeeds a live bus from a secondary utility loop, the graph will light up red and politely inform you that you’ve just engineered a catastrophic phase conflict.
+## What It Does Today
 
-Bastard-proof your MOPs before you ever step foot on the yard.
+- Build arbitrary topologies from live canvas state using `@xyflow/react`; no hardcoded adjacency list, no fixed yard model.
+- Drop the current equipment set into the yard: utility feeds, generators, MVSG, PTX, switchboards, transfer switches, mechanical loads, and generic loads.
+- Draw connections as either breakers or solid wires.
+- Propagate source-aware power state across the graph and resolve `Live`, `Dead`, `Backfeed`, and `Phase Conflict`.
+- Detect unsynchronized source overlap and trip adjacent closed breakers through the current coarse protective-isolation model.
+- Control sources and reset tripped breakers from the docked SCADA panel.
+- Record and replay linear MOP sequences through snapshot-based playback.
+- Export and import topology state, including recorded MOP snapshots.
+- Build to a single self-contained `dist/index.html` for portable deployment.
 
----
+## Current Status
 
-## Core Features
+OneLine-Canvas is **topology-aware, source-aware, and conflict-aware today**. It already handles dynamic graph traversal, backfeed detection, phase-conflict detection, ATS source selection, SCADA control, and MOP playback on arbitrary user-built topologies.
 
-* **Node-Based Topology Mapping:** Drag and drop 12.47kV utility feeds, switchgear, and transformers. Wire up the DINs and breakers using intuitive visual scripting.
-* **Live Power Propagation:** The engine evaluates circuit states in real-time. Close a breaker, and watch the flow of live voltage snake through your loops. 
-* **Catastrophic Conflict Detection:** Instantly flags dead-bus conditions, accidental paralleling of out-of-phase sources, and backfeed vulnerabilities. 
-* **Cx Sequencing Validation:** Step through your Commissioning (Cx) scripts and Lock-Out/Tag-Out (LOTO) procedures safely. Prove the logic works before an operator flips copper in the real world.
+It is **not yet a full electrical-physics simulator**. Voltage-aware semantics, transformer behavior beyond metadata and labels, detailed breaker and switch ratings, richer relay coordination, and deeper protection logic are still in progress. If you want the live backlog instead of the cleaned-up sales pitch, read [OUTSTANDING.md](./OUTSTANDING.md).
 
----
+## Stack
 
-## Setup
+- React 18
+- Vite
+- Tailwind CSS
+- `@xyflow/react`
+- Vitest
+- `vite-plugin-singlefile`
+
+## Getting Started
 
 OneLine-Canvas uses `npm`, with `package.json` and `package-lock.json` as the canonical install source.
 
 ### Prerequisites
 
-Install a compatible Node.js release before doing anything else:
+Install a Node.js release that satisfies the repo policy:
 
-* Node `20.19+`
-* Node `22.12+`
+- Node `^20.19.0`
+- or Node `>=22.12.0`
 
-After installation, open a fresh terminal in `C:\JeremyDev\OneLine-Canvas` and verify both commands resolve:
+Verify your toolchain:
 
 ```bash
 node --version
 npm --version
 ```
 
-If Windows says `'node' is not recognized` or `'npm' is not recognized`, reopen the terminal and confirm the Node installer added Node to your `PATH`.
-
-### Install Dependencies
-
-Use the lockfile-backed install so the workspace matches the checked-in toolchain exactly:
+### Install
 
 ```bash
 npm ci
 ```
 
-### Validate The Workspace
+### Run The App
 
-Run the dependency self-check any time you need to confirm the local environment is healthy:
+```bash
+npm run dev
+```
+
+This starts the local Vite dev server from the repo root.
+
+### Run Engine Tests
+
+```bash
+npm test
+```
+
+The current automated suite focuses on the graph traversal and power-flow engine rather than DOM-heavy UI coverage.
+
+### Build The Portable Artifact
+
+```bash
+npm run build
+```
+
+The production build emits a single inlined `dist/index.html`.
+
+### Validate Dependencies
 
 ```bash
 npm run check:deps
 ```
 
-The check verifies:
+This command validates the Node version, manifest parity, lockfile parity, dependency inventory, and top-level install state.
 
-* your Node version satisfies the repo policy
-* `node_modules` exists
-* `package.json` and `package-lock.json` are in sync
-* `DEPENDENCIES.md` matches the declared manifests
-* top-level npm packages are installed without missing, invalid, or extraneous entries
+Use it as a **clean-install validation step**. In the current repo, normal Vite activity can leave temporary directories such as `.vite` or `.vite-temp` in `node_modules`, and the checker currently treats those as extraneous top-level packages. If that happens, rerun `npm ci` before using `npm run check:deps` again.
 
-If the dependency check reports missing install state or manifest drift, rerun `npm ci`.
+## How To Use It
 
-### Normal Next Steps
+1. Drag equipment from the palette into the yard.
+2. Choose whether new connections should be drawn as `Breaker` or `Solid Wire`.
+3. Connect utility or generator sources to downstream gear.
+4. Toggle source status and breaker state to energize, isolate, or intentionally abuse the topology.
+5. Watch the engine resolve `Live`, `Dead`, `Backfeed`, and `Phase Conflict` in real time.
+6. Use the SCADA panel for centralized source supervision, breaker reset, and MOP recording or playback.
+7. Save the topology to JSON when you want to move the scenario or keep the evidence.
 
-```bash
-npm run dev
-npm test
-npm run build
-```
+## Repo Docs
 
----
+- [AGENTS.md](./AGENTS.md): project constraints, architecture contract, and implementation rules
+- [handoff.md](./handoff.md): historical implementation narrative and system evolution log
+- [OUTSTANDING.md](./OUTSTANDING.md): active backlog of simulation, modeling, testing, and documentation gaps
+- [DEPENDENCIES.md](./DEPENDENCIES.md): declared package inventory and dependency notes
+
+## Current Limitations
+
+- The engine is not yet voltage-aware across mixed 12.47 kV and 480 V corridors.
+- PTX exists in the current model, but transformer behavior is not yet simulated as full electrical step-down logic.
+- Breakers and switches do not yet model detailed ratings, permissives, or realistic protection coordination.
+- ATS behavior currently supports manual source selection rather than full sensing, timers, or automatic retransfer policy.
+- UI coverage is still behind engine coverage; the deepest automated tests live in `src/engine/powerFlow.test.js`.
+
+For the unabridged list, go straight to [OUTSTANDING.md](./OUTSTANDING.md).
 
 ## Contributing
 
-If you want to add new component types, refine the simulation loop, or build a better UI for tagging components, pull requests are welcome. Make sure your logic is sound. We do not accept code that breaks fundamental laws of thermodynamics, introduces phantom loads, or assumes a perfect physical world.
+Pull requests are welcome, but keep your feet on the floor:
 
----
+- Respect the engine-first architecture. The simulation logic and the React Flow presentation layer are supposed to stay decoupled.
+- Prefer improving deterministic graph behavior and test coverage before polishing the paint.
+- Add or update engine tests when you change traversal, source resolution, fault behavior, ATS gating, or protection logic.
+- Read [AGENTS.md](./AGENTS.md) before making structural changes. That file is the repo contract, not optional flavor text.
 
-## License & Usage
+If your change assumes perfect operators, perfect gear, or a magically forgiving electrical system, it probably needs another pass.
 
-This repository is licensed under the AGPLv3. This is an aggressively copyleft license, and it is infectious by design to enforce a twisted kind of honor among thieves.
+## License
 
-You are free to use, modify, and distribute this software. However, the AGPL comes with a barbed hook: if you modify this codebase and distribute it—or crucially, if you let users interact with a modified version of this software over a network (like a web-hosted service)—you must make your complete underlying source code publicly available under the exact same AGPLv3 license.
+This repository is licensed under the AGPLv3. If you distribute a modified version, or run a modified version as a networked service, you are on the hook to provide the corresponding source code under the same license.
 
-There is no server-side loophole. If you want to leverage this logic to build a proprietary tool for your firm's internal coordination workflows, you either open-source your entire derivative project for the community to dissect, or you walk away.
+Read [LICENSE](./LICENSE) for the full text. If your plan depends on keeping derivatives proprietary, this repo is not going to cooperate.
