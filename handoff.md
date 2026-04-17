@@ -1,5 +1,7 @@
 # OneLine-Canvas Master Handoff (Phases 1-14)
 
+`handoff.md` is the historical architecture log. For the live backlog of unresolved modeling, workflow, testing, and documentation gaps, see `OUTSTANDING.md`.
+
 ## Source Map (Historical Inputs)
 | Phase | Revision | Date | Commit Subject | Status |
 | --- | --- | --- | --- | --- |
@@ -14,9 +16,9 @@
 | Phase 9 | `6ae264482bbf10a9113a05493e41c88310c548f9` | `2026-04-13` | `Implement protective isolation auto-trip breakers` | Committed |
 | Phase 10 | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Implement equipment identity and synchronized source paralleling` | Committed |
 | Phase 11 | `17ed10fee00b6d88bc3cf2264ad95b46828833c9` | `2026-04-14` | `Add docked SCADA dashboard for source control and breaker reset` | Committed |
-| Phase 12 | `working-tree` | `2026-04-14` | `Implement snapshot-based MOP recorder and playback deck` | Verified |
-| Phase 13 | `working-tree` | `2026-04-14` | `Implement intelligent ATS interlocks and MOP-aware transfer throws` | Verified |
-| Phase 14 | `working-tree` | `2026-04-14` | `Add native visual deletion controls and explicit breaker vs wire draw modes` | Implemented |
+| Phase 12 | `d1de6d1` | `2026-04-14` | `Implement snapshot-based MOP recorder and playback deck` | Committed |
+| Phase 13 | `09bc204` | `2026-04-14` | `Implement intelligent ATS interlocks and MOP-aware transfer throws` | Committed |
+| Phase 14 | `4e66668` | `2026-04-14` | `Add native visual deletion controls and explicit breaker vs wire draw modes` | Committed |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -207,7 +209,7 @@
   - Breaker reset is global/manual only; there is no selective reset or breaker grouping model.
 
 ### Phase 12: MOP Recorder
-- Revision: `working-tree`
+- Revision: `d1de6d1`
 - Date: `2026-04-14`
 - Subject: `Implement snapshot-based MOP recorder and playback deck`
 - Major additions:
@@ -225,7 +227,7 @@
   - Snapshot playback is authoritative and may overwrite manual yard edits made after the recording was captured.
 
 ### Phase 13: Intelligent Transfer Switches
-- Revision: `working-tree`
+- Revision: `09bc204`
 - Date: `2026-04-14`
 - Subject: `Implement intelligent ATS interlocks and MOP-aware transfer throws`
 - Major additions:
@@ -242,7 +244,7 @@
   - Break-before-make is modeled as pure connectivity filtering with no overlap or transfer-delay timing window.
 
 ### Phase 14: Canvas Ergonomics
-- Revision: `working-tree`
+- Revision: `4e66668`
 - Date: `2026-04-14`
 - Subject: `Add native visual deletion controls and explicit breaker vs wire draw modes`
 - Major additions:
