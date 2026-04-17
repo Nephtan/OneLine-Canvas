@@ -18,6 +18,7 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 - [ ] Expand protection modeling beyond coarse conflict auto-trip toward selective isolation or relay coordination behavior.
 - [ ] Define future breaker and switch semantics for current limits, permissives, and protection-oriented device modeling.
 - [ ] Decide whether additional named handles are needed for future breaker terminals, line/load separation, or protective-device interfaces beyond the current ATS exception.
+- [ ] Replace the current always-continuous PTX primary daisy-chain bus with explicit operator-controlled MV switch or isolation semantics where S1/S2-style behavior matters.
 
 ## Transfer-Switch Automation
 - [ ] Add automatic ATS source-fail sensing instead of manual source selection only.

@@ -1,4 +1,4 @@
-# OneLine-Canvas Master Handoff (Phases 1-14)
+# OneLine-Canvas Master Handoff (Phases 1-15)
 
 `handoff.md` is the historical architecture log. For the live backlog of unresolved modeling, workflow, testing, and documentation gaps, see `OUTSTANDING.md`.
 
@@ -19,7 +19,8 @@
 | Phase 12 | `d1de6d1` | `2026-04-14` | `Implement snapshot-based MOP recorder and playback deck` | Committed |
 | Phase 13 | `09bc204` | `2026-04-14` | `Implement intelligent ATS interlocks and MOP-aware transfer throws` | Committed |
 | Phase 14 | `4e66668` | `2026-04-14` | `Add native visual deletion controls and explicit breaker vs wire draw modes` | Committed |
-| Phase 15 | `working-tree` | `2026-04-17` | `Implement voltage-aware transformer propagation and properties modal` | Implemented |
+| Phase 15 | `9fe5e68` | `2026-04-17` | `Implement voltage-aware transformer propagation and properties modal` | Committed |
+| Working Tree | `working-tree` | `2026-04-17` | `Enable PTX primary-bus daisy-chain propagation` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -263,7 +264,7 @@
   - Keyboard deletion remains enabled, but MOP capture is only guaranteed for the new explicit delete buttons.
 
 ### Phase 15: Voltage Reality Check
-- Revision: `working-tree`
+- Revision: `9fe5e68`
 - Date: `2026-04-17`
 - Subject: `Implement voltage-aware transformer propagation and properties modal`
 - Major additions:
@@ -279,6 +280,22 @@
 - Unresolved items at phase end:
   - Voltage faults do not auto-trip breakers yet; only `Phase Conflict` continues to drive breaker trip isolation.
   - PTX behavior is still ideal-ratio only; there is no impedance, inrush, vector-group, tap, or protective relay model.
+
+### Working Tree Update: PTX Primary Daisy-Chain
+- Revision: `working-tree`
+- Date: `2026-04-17`
+- Subject: `Enable PTX primary-bus daisy-chain propagation`
+- Major additions:
+  - Split the PTX primary side into explicit handle roles: `ptx-bus-in` for inbound MV feeders, `ptx-bus-loop` for MV continuation to the next PTX, and the existing `ptx-bus-out` secondary source handle for stepped-down output.
+  - Updated `PTXNode.jsx` to render the top side as one labeled MV bus with distinct `In` and `Loop` connection points so operators can chain transformers input-to-input without loosening handle semantics app-wide.
+  - Preserved existing saved-graph behavior by keeping legacy missing-handle PTX edges compatible with `ptx-bus-in` / `ptx-bus-out` fallback inference.
+- Engine-state evolution:
+  - PTX side detection now reads explicit handle roles from live edge handle IDs rather than inferring transformer side only from source-versus-target position.
+  - A matched PTX primary or secondary arrival now energizes the whole internal primary bus, allowing MV packets to continue across chained PTX primary corridors while still transforming to the configured secondary voltage.
+  - Reverse PTX backfeed now traverses the new primary daisy-chain path, while primary-voltage mismatches still fault the offending PTX and block onward MV continuation plus secondary output.
+- Unresolved items at phase end:
+  - PTX primary daisy-chain behavior is currently modeled as an always-continuous internal bus; explicit operator-controlled S1/S2-style MV switch states are not implemented yet.
+  - PTX protection remains idealized; no fuse, relay, or sectionalizing-device behavior is attached to the new primary loop corridor.
 
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
@@ -382,7 +399,8 @@
   - ATS throws are now MOP-recordable actions and replay purely through canonical snapshot application rather than any special transfer-sequence engine.
 - Voltage-aware electrical modeling:
   - All non-PTX gear now compares incoming propagated voltage against `nominalVoltage` and resolves any mismatch as `Voltage Fault`.
-  - PTXs now transform matched primary packets to `secondaryVoltage` and matched secondary packets to `primaryVoltage`, allowing safe step-down and reverse backfeed studies.
+  - PTXs now expose explicit primary-bus handle roles (`ptx-bus-in`, `ptx-bus-loop`) plus the existing `ptx-bus-out` secondary handle so MV daisy-chains can be modeled directly on the transformer input side.
+  - PTXs now transform matched primary packets to `secondaryVoltage` and matched secondary packets to `primaryVoltage`, while a live primary bus can continue the same MV voltage onward through chained PTX corridors.
   - Visual precedence is now locked to `Voltage Fault > Phase Conflict > Backfeed > Live > Dead`; latent phase-conflict flags remain available in engine output even when the node renders purple.
 - Tooling guardrails:
   - `package.json` now declares a Node engine policy of `^20.19.0 || >=22.12.0`.
@@ -397,7 +415,8 @@
 - Voltage handling:
   - Root sources inject their own `nominalVoltage` into the traversal when online.
   - Non-transformer nodes conduct packets unchanged and mark `Voltage Fault` whenever any incoming packet voltage differs from their `nominalVoltage`.
-  - PTXs evaluate packets by arrival side: primary-side arrivals must match `primaryVoltage` to emit `secondaryVoltage`, and secondary-side arrivals must match `secondaryVoltage` to emit `primaryVoltage`.
+  - PTX side detection is now explicit-handle-aware: `ptx-bus-in` and `ptx-bus-loop` are both primary-side arrivals, while `ptx-bus-out` is the secondary side.
+  - PTXs evaluate packets by arrival side: matched primary arrivals energize the full internal primary bus, matched secondary arrivals step back up to `primaryVoltage`, and either matched path can propagate MV packets across chained PTX primary corridors.
   - A PTX voltage mismatch blocks conduction through that direction only, leaving the far side dark while the PTX itself renders as `Voltage Fault`.
 - Conflict and backfeed:
   - Multi-source overlap resolves to `Phase Conflict` only when the contributing source IDs do not all map to one shared, non-empty normalized sync group.
@@ -432,7 +451,8 @@
 - Voltage-aware traversal packets must preserve both `sourceId` and propagated voltage all the way through memoized evaluation.
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
 - Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
-- PTX conduction is side-aware and idealized: matched primary packets step down to `secondaryVoltage`, matched secondary packets step back up to `primaryVoltage`, and mismatched arrivals block that direction.
+- PTX handle semantics are deterministic: `ptx-bus-in` is a primary target, `ptx-bus-loop` is a primary source for MV continuation, and `ptx-bus-out` remains the stepped secondary source.
+- PTX conduction is side-aware and idealized: matched primary or secondary arrivals energize the internal primary bus, matched primary paths still transform to `secondaryVoltage`, matched secondary paths still step back up to `primaryVoltage`, and mismatched arrivals block that direction.
 - Visual state precedence is locked to `Voltage Fault > Phase Conflict > Backfeed > Live > Dead`, but phase-conflict flags must remain available for breaker trip logic and future diagnostics.
 - `transferSwitch` nodes now require canonical `data.activeSource` of `"primary"` or `"emergency"`.
 - ATS inactive feeder edges must behave exactly like open branches: non-conductive, `de-energized`, and excluded from conflict/trip evaluation.
@@ -453,6 +473,7 @@
 - `Clear Yard` remains destructive with no confirmation/undo stack.
 - Source controls are now available both node-local and via SCADA, and Phase 12 adds linear scenario playback, but there is still no scripted SOO automation, batch editing, timeline branching, or timed autoplay layer.
 - ATS nodes now prevent primary/emergency source paralleling internally, but they do not yet implement automatic transfer, source-fail sensing, permissive timers, or neutral-position logic.
+- PTX primary daisy-chains are currently modeled as always-continuous internal buses; explicit S1/S2-style MV switch states or isolation points are not yet operator-editable.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 - `npm run check:deps` currently assumes a clean `node_modules`; Vite temp directories such as `.vite` and `.vite-temp` can trigger false-positive extraneous-package failures after normal dev/build/test activity.
 - Visual delete controls and connection draw-mode ergonomics are now present, but there is still no automated UI coverage for these operator workflows.
@@ -467,7 +488,7 @@
 - Edge power-state mapping (`de-energized`, `energized`, `phase-conflict`).
 - Trip-aware breaker behavior (`tripped` treated as non-conductive/de-energized).
 - Fault-hitlist emission (`faultedEdgeIds`) for conflict corridors and non-conflict empty-set checks.
-- Voltage-fault detection for direct MV-to-LV feeds, PTX step-down success paths, PTX primary mismatch firewall behavior, and reverse PTX backfeed.
+- Voltage-fault detection for direct MV-to-LV feeds, PTX step-down success paths, PTX primary mismatch firewall behavior, PTX primary daisy-chain continuation, and reverse PTX backfeed across chained primary buses.
 - Generator root propagation, generator-offline behavior, utility+generator tie conflict, and generator topology-key invalidation.
 - Root sync-group topology-key invalidation and label-only cache stability.
 - ATS interlock behavior on both breaker and standard-wire feeders plus end-to-end chain propagation through `generator -> switchboard -> transferSwitch -> mechanical`.

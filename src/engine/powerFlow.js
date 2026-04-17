@@ -12,7 +12,9 @@ import {
 } from "../topology/edgeTypes";
 import { normalizeVoltageValue } from "../electrical/voltage";
 import {
+  TRANSFORMER_HANDLE_ID,
   TRANSFORMER_SIDE,
+  getTransformerHandleRoleForEdge,
   getTransformerSideForEdge,
   isTransformerNodeType
 } from "../topology/transformer";
@@ -237,6 +239,49 @@ function getArrivalSideForNeighbor(edge, neighborNode) {
   return getTransformerSideForEdge(edge, neighborNode.id);
 }
 
+function getTransformerOutgoingTransmissions(node, arrivalSide, voltage) {
+  const primaryVoltage = getTransformerVoltage(node, TRANSFORMER_SIDE.PRIMARY);
+  const secondaryVoltage = getTransformerVoltage(node, TRANSFORMER_SIDE.SECONDARY);
+
+  if (arrivalSide === TRANSFORMER_SIDE.PRIMARY) {
+    if (voltage !== primaryVoltage) {
+      return [];
+    }
+
+    return [
+      {
+        outgoingHandleRoles: [
+          TRANSFORMER_HANDLE_ID.PRIMARY_IN,
+          TRANSFORMER_HANDLE_ID.PRIMARY_LOOP
+        ],
+        outgoingVoltage: primaryVoltage
+      },
+      {
+        outgoingHandleRoles: [TRANSFORMER_HANDLE_ID.SECONDARY],
+        outgoingVoltage: secondaryVoltage
+      }
+    ];
+  }
+
+  if (arrivalSide === TRANSFORMER_SIDE.SECONDARY) {
+    if (voltage !== secondaryVoltage) {
+      return [];
+    }
+
+    return [
+      {
+        outgoingHandleRoles: [
+          TRANSFORMER_HANDLE_ID.PRIMARY_IN,
+          TRANSFORMER_HANDLE_ID.PRIMARY_LOOP
+        ],
+        outgoingVoltage: primaryVoltage
+      }
+    ];
+  }
+
+  return [];
+}
+
 function recordArrivalVoltage(arrivalBucketsByNodeId, nodeId, arrivalSide, voltage) {
   const arrivalBuckets = arrivalBucketsByNodeId.get(nodeId);
 
@@ -255,32 +300,6 @@ function recordArrivalVoltage(arrivalBucketsByNodeId, nodeId, arrivalSide, volta
   }
 
   arrivalBuckets.bus.add(voltage);
-}
-
-function getTransformerOutgoingPacket(node, arrivalSide, voltage) {
-  if (arrivalSide === TRANSFORMER_SIDE.PRIMARY) {
-    if (voltage !== getTransformerVoltage(node, TRANSFORMER_SIDE.PRIMARY)) {
-      return null;
-    }
-
-    return {
-      outgoingSide: TRANSFORMER_SIDE.SECONDARY,
-      outgoingVoltage: getTransformerVoltage(node, TRANSFORMER_SIDE.SECONDARY)
-    };
-  }
-
-  if (arrivalSide === TRANSFORMER_SIDE.SECONDARY) {
-    if (voltage !== getTransformerVoltage(node, TRANSFORMER_SIDE.SECONDARY)) {
-      return null;
-    }
-
-    return {
-      outgoingSide: TRANSFORMER_SIDE.PRIMARY,
-      outgoingVoltage: getTransformerVoltage(node, TRANSFORMER_SIDE.PRIMARY)
-    };
-  }
-
-  return null;
 }
 
 function setHasVoltageFaultForNode(node, arrivalBuckets, nodeVoltageSet) {
@@ -435,34 +454,40 @@ export function evaluatePowerFlow(nodes, edges) {
     }
 
     if (isTransformerNodeType(currentNode.type)) {
-      const outgoingPacket = getTransformerOutgoingPacket(
+      const outgoingTransmissions = getTransformerOutgoingTransmissions(
         currentNode,
         packet.arrivalSide,
         packet.voltage
       );
 
-      if (!outgoingPacket) {
+      if (outgoingTransmissions.length === 0) {
         continue;
       }
 
-      for (const edge of incidentEdges) {
-        if (
-          getTransformerSideForEdge(edge, packet.nodeId) !==
-          outgoingPacket.outgoingSide
-        ) {
-          continue;
+      for (const outgoingTransmission of outgoingTransmissions) {
+        for (const edge of incidentEdges) {
+          const edgeHandleRole = getTransformerHandleRoleForEdge(
+            edge,
+            packet.nodeId
+          );
+
+          if (
+            !outgoingTransmission.outgoingHandleRoles.includes(edgeHandleRole)
+          ) {
+            continue;
+          }
+
+          const neighborId = getNeighborIdForEdge(edge, packet.nodeId);
+          const neighborNode = nodeById.get(neighborId);
+
+          edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
+          enqueuePacket(
+            neighborId,
+            getArrivalSideForNeighbor(edge, neighborNode),
+            packet.sourceId,
+            outgoingTransmission.outgoingVoltage
+          );
         }
-
-        const neighborId = getNeighborIdForEdge(edge, packet.nodeId);
-        const neighborNode = nodeById.get(neighborId);
-
-        edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
-        enqueuePacket(
-          neighborId,
-          getArrivalSideForNeighbor(edge, neighborNode),
-          packet.sourceId,
-          outgoingPacket.outgoingVoltage
-        );
       }
 
       continue;

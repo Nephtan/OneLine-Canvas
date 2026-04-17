@@ -105,6 +105,17 @@ function PTXNode({ data }) {
           ? "border border-amber-100 bg-amber-300"
           : "border border-violet-300/70 bg-violet-500/70";
 
+  const primaryBusRailClassName =
+    powerState === NODE_POWER_STATE.VOLTAGE_FAULT
+      ? "bg-purple-400/85 shadow-[0_0_10px_rgba(168,85,247,0.42)]"
+      : powerState === NODE_POWER_STATE.PHASE_CONFLICT
+      ? "bg-red-400 shadow-[0_0_10px_rgba(239,68,68,0.45)]"
+      : powerState === NODE_POWER_STATE.BACKFEED
+        ? "bg-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.38)]"
+        : powerState === NODE_POWER_STATE.LIVE
+          ? "bg-amber-300 shadow-[0_0_10px_rgba(250,204,21,0.42)]"
+          : "bg-violet-500/70";
+
   return (
     <div className={`min-w-60 rounded-md border px-4 py-3 text-left ${shellClassName}`}>
       <div className="flex items-center justify-between gap-2">
@@ -156,17 +167,38 @@ function PTXNode({ data }) {
           ? propagatingVoltages.map((voltage) => formatVoltageValue(voltage)).join(", ")
           : "None"}
       </div>
+      <div className="relative mt-3 h-6">
+        <div
+          className={`absolute left-2 right-2 top-3 h-1 rounded-full ${primaryBusRailClassName}`}
+        />
+        <div className="absolute left-[25%] top-0 -translate-x-1/2 text-[9px] uppercase tracking-[0.18em] text-slate-500">
+          In
+        </div>
+        <div className="absolute left-[75%] top-0 -translate-x-1/2 text-[9px] uppercase tracking-[0.18em] text-slate-500">
+          Loop
+        </div>
+      </div>
 
       <Handle
-        id={TRANSFORMER_HANDLE_ID.PRIMARY}
+        id={TRANSFORMER_HANDLE_ID.PRIMARY_IN}
         type="target"
         position={Position.Top}
         isConnectable
-        className={`!h-2.5 !rounded-full ${handleClassName}`}
+        className={`!h-2.5 !w-6 !rounded-full ${handleClassName}`}
         style={{
-          width: "calc(100% - 20px)",
-          left: 10,
-          transform: "translate(0, -50%)"
+          left: "25%",
+          transform: "translate(-50%, -50%)"
+        }}
+      />
+      <Handle
+        id={TRANSFORMER_HANDLE_ID.PRIMARY_LOOP}
+        type="source"
+        position={Position.Top}
+        isConnectable
+        className={`!h-2.5 !w-6 !rounded-full ${handleClassName}`}
+        style={{
+          left: "75%",
+          transform: "translate(-50%, -50%)"
         }}
       />
       <Handle
