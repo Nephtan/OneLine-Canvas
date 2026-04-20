@@ -24,6 +24,7 @@
 | Feature Update | `273fa4c` | `2026-04-17` | `Add dual-ended PTX primary terminals` | Committed |
 | Working Tree | `working-tree` | `2026-04-17` | `Repair PTX top-edge terminal visuals` | Implemented |
 | Working Tree | `working-tree` | `2026-04-17` | `Implement grid-snapped canvas routing and marquee selection` | Implemented |
+| Working Tree | `working-tree` | `2026-04-20` | `Restore constrained edge control dragging and breaker click semantics` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -472,12 +473,14 @@
   - Node and edge deletion now flows through native React Flow `deleteElements()` so topology pruning invalidates the graph naturally without manual dangling-edge cleanup logic.
   - New user-drawn connections always carry an explicit custom edge type (`breaker` or `standard`); React Flow fallback edges are no longer part of the supported topology contract.
   - Canvas placement and node dragging are now locked to a visible 24 px grid, while empty-pane left drag performs marquee node selection and panning is reserved for `Space` drag or middle mouse.
-  - Breaker and wire edges now persist visual-only orthogonal waypoint layouts in canonical edge data, and selected edges expose manual add/drag/remove waypoint controls without changing any electrical semantics.
-  - Routed edge waypoints translate with multi-node moves only when both edge endpoints are inside the dragged node set; otherwise waypoints remain fixed in canvas space and only the endpoint legs recompute.
+  - Breaker line clicks once again cycle the canonical breaker state directly (`tripped -> open -> closed`), while the visible edge-control cluster remains a separate drag surface for keeping controls unobscured.
+  - Breaker and wire edges now persist a visual-only orthogonal `layout.controlPoint` override in canonical edge data. Auto placement remains the default, and dragging the visible edge-control cluster promotes that edge to a custom anchored route without changing any electrical semantics.
+  - Legacy `layout.waypoints` payloads are still accepted during hydration/import, but they are normalized into one approximate `controlPoint` so old saved yards remain load-safe while new saves stop emitting waypoint arrays.
+  - Custom edge control points translate with multi-node moves only when both edge endpoints are inside the dragged node set; otherwise the saved control point remains fixed in canvas space and only the endpoint legs recompute.
 - Recompute and memoization:
   - Topology key includes node identity/type plus root-source online signatures, normalized root sync-group signatures, and transfer-switch `activeSource`.
   - Topology key includes edge type, source/target, source-handle/target-handle IDs, and breaker state (`open`, `closed`, `tripped`) where applicable.
-  - Position-only drags, label-only renames, and visual-only edge waypoint reroutes do not invalidate traversal cache.
+  - Position-only drags, label-only renames, and visual-only edge control-point reroutes do not invalidate traversal cache.
 
 ### Locked Behavioral Contracts for Implementers
 - Topology source of truth is always live React Flow `nodes`/`edges`; no hardcoded adjacency is permitted.
@@ -517,7 +520,7 @@
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 - `npm run check:deps` currently assumes a clean `node_modules`; Vite temp directories such as `.vite` and `.vite-temp` can trigger false-positive extraneous-package failures after normal dev/build/test activity.
 - Visual delete controls and connection draw-mode ergonomics are now present, but there is still no automated UI coverage for these operator workflows.
-- Orthogonal edge routing is operator-driven only; there is no obstacle-avoidance, autorouter, or route-cleanup pass beyond the manual snapped waypoint editor.
+- Orthogonal edge routing is operator-driven only; there is no obstacle-avoidance, autorouter, route-cleanup pass, or explicit reset-to-auto-placement control beyond the manual single-anchor control-point workflow.
 
 ## Engine Verification and Test Coverage Snapshot
 

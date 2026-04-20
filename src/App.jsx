@@ -43,12 +43,10 @@ import {
 import {
   CANVAS_GRID_SIZE,
   CANVAS_SNAP_GRID,
-  createEdgeWaypointId,
-  getEdgeWaypoints,
+  getEdgeControlPoint,
   normalizeCanvasEdgeData,
-  normalizeEdgeLayout,
   snapCanvasPoint,
-  translateEdgeWaypoints
+  translateEdgeControlPoint
 } from "./canvas/edgeLayout";
 
 const nodeTypes = {
@@ -82,10 +80,10 @@ function getDefaultEdgeData(edgeType) {
   return normalizedEdgeType === EDGE_TYPE.BREAKER
     ? {
         breakerState: BREAKER_STATE.OPEN,
-        layout: { waypoints: [] }
+        layout: { controlPoint: null }
       }
     : {
-        layout: { waypoints: [] }
+        layout: { controlPoint: null }
       };
 }
 
@@ -341,7 +339,6 @@ function App() {
   );
   const [pendingMopAction, setPendingMopAction] = useState(null);
   const [activePropertiesNodeId, setActivePropertiesNodeId] = useState(null);
-  const [selectedEdgeId, setSelectedEdgeId] = useState(null);
   const reactFlowInstanceRef = useRef(null);
   const importInputRef = useRef(null);
   const skipNextAutosaveRef = useRef(false);
@@ -426,18 +423,6 @@ function App() {
       setActivePropertiesNodeId(null);
     }
   }, [nodes, activePropertiesNodeId]);
-
-  useEffect(() => {
-    if (!selectedEdgeId) {
-      return;
-    }
-
-    const selectedEdgeStillExists = edges.some((edge) => edge.id === selectedEdgeId);
-
-    if (!selectedEdgeStillExists) {
-      setSelectedEdgeId(null);
-    }
-  }, [edges, selectedEdgeId]);
 
   useEffect(() => {
     if (!pendingMopAction || !mopBaseSnapshot || faultedEdgeIds.length > 0) {
@@ -723,7 +708,6 @@ function App() {
 
       setIsRecordingMop(false);
       setPendingMopAction(null);
-      setSelectedEdgeId(null);
       setNodes(clonedSnapshot.nodes);
       setEdges(clonedSnapshot.edges);
       setMopPlaybackIndex(nextPlaybackIndex);
@@ -828,69 +812,36 @@ function App() {
     [edges, isRecordingMop]
   );
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !selectedEdgeId) {
-      return undefined;
-    }
-
-    const handleKeyDown = (event) => {
-      const eventTarget = event.target;
-      const isTextInputTarget =
-        eventTarget instanceof HTMLElement &&
-        (eventTarget.tagName === "INPUT" ||
-          eventTarget.tagName === "TEXTAREA" ||
-          eventTarget.tagName === "SELECT" ||
-          eventTarget.isContentEditable);
-
-      if (
-        isTextInputTarget ||
-        (event.key !== "Delete" && event.key !== "Backspace")
-      ) {
+  const requestBreakerToggle = useCallback(
+    (edge) => {
+      if (!edge || normalizeCanvasEdgeType(edge.type) !== EDGE_TYPE.BREAKER) {
         return;
       }
 
-      event.preventDefault();
-      void handleDeleteEdgeRequest(selectedEdgeId);
-    };
+      const nextState = getNextBreakerState(edge.data?.breakerState);
 
-    window.addEventListener("keydown", handleKeyDown);
+      if (isRecordingMop) {
+        setPendingMopAction({
+          targetId: edge.id,
+          actionType: MOP_ACTION_TYPE.TOGGLE_BREAKER,
+          targetState:
+            nextState === BREAKER_STATE.CLOSED
+              ? BREAKER_STATE.CLOSED
+              : BREAKER_STATE.OPEN,
+          actionText:
+            nextState === BREAKER_STATE.CLOSED
+              ? `Closed Breaker ${edge.id}`
+              : `Opened Breaker ${edge.id}`
+        });
+      }
 
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [selectedEdgeId, handleDeleteEdgeRequest]);
-
-  const addEdgeWaypoint = useCallback(
-    (edgeId, insertIndex, position) => {
-      setEdges((currentEdges) =>
-        currentEdges.map((edge) => {
-          if (edge.id !== edgeId) {
-            return edge;
-          }
-
-          const normalizedData = normalizeCanvasEdgeData(edge.data);
-          const nextWaypoints = normalizedData.layout.waypoints.slice();
-
-          nextWaypoints.splice(Math.max(0, insertIndex), 0, {
-            id: createEdgeWaypointId(),
-            ...snapCanvasPoint(position)
-          });
-
-          return {
-            ...edge,
-            data: {
-              ...normalizedData,
-              layout: normalizeEdgeLayout({ waypoints: nextWaypoints })
-            }
-          };
-        })
-      );
+      applyBreakerState(edge.id, nextState);
     },
-    [setEdges]
+    [isRecordingMop, applyBreakerState]
   );
 
-  const moveEdgeWaypoint = useCallback(
-    (edgeId, waypointId, nextPosition) => {
+  const moveEdgeControlPoint = useCallback(
+    (edgeId, nextPosition) => {
       setEdges((currentEdges) =>
         currentEdges.map((edge) => {
           if (edge.id !== edgeId) {
@@ -898,23 +849,14 @@ function App() {
           }
 
           const normalizedData = normalizeCanvasEdgeData(edge.data);
-          let didMoveWaypoint = false;
-          const snappedPosition = snapCanvasPoint(nextPosition);
-          const nextWaypoints = normalizedData.layout.waypoints.map((waypoint) => {
-            if (waypoint.id !== waypointId) {
-              return waypoint;
-            }
+          const nextControlPoint = snapCanvasPoint(nextPosition);
+          const currentControlPoint = normalizedData.layout.controlPoint;
 
-            didMoveWaypoint = true;
-
-            return {
-              ...waypoint,
-              x: snappedPosition.x,
-              y: snappedPosition.y
-            };
-          });
-
-          if (!didMoveWaypoint) {
+          if (
+            currentControlPoint &&
+            currentControlPoint.x === nextControlPoint.x &&
+            currentControlPoint.y === nextControlPoint.y
+          ) {
             return edge;
           }
 
@@ -922,37 +864,9 @@ function App() {
             ...edge,
             data: {
               ...normalizedData,
-              layout: normalizeEdgeLayout({ waypoints: nextWaypoints })
-            }
-          };
-        })
-      );
-    },
-    [setEdges]
-  );
-
-  const removeEdgeWaypoint = useCallback(
-    (edgeId, waypointId) => {
-      setEdges((currentEdges) =>
-        currentEdges.map((edge) => {
-          if (edge.id !== edgeId) {
-            return edge;
-          }
-
-          const normalizedData = normalizeCanvasEdgeData(edge.data);
-          const nextWaypoints = normalizedData.layout.waypoints.filter(
-            (waypoint) => waypoint.id !== waypointId
-          );
-
-          if (nextWaypoints.length === normalizedData.layout.waypoints.length) {
-            return edge;
-          }
-
-          return {
-            ...edge,
-            data: {
-              ...normalizedData,
-              layout: normalizeEdgeLayout({ waypoints: nextWaypoints })
+              layout: {
+                controlPoint: nextControlPoint
+              }
             }
           };
         })
@@ -968,17 +882,17 @@ function App() {
       }
 
       const movingNodeIdSet = new Set(movingNodes.map((node) => node.id));
-      const baseWaypointsByEdgeId = {};
+      const baseControlPointsByEdgeId = {};
 
       edges.forEach((edge) => {
         if (
           movingNodeIdSet.has(edge.source) &&
           movingNodeIdSet.has(edge.target)
         ) {
-          const waypoints = getEdgeWaypoints(edge);
+          const controlPoint = getEdgeControlPoint(edge);
 
-          if (waypoints.length > 0) {
-            baseWaypointsByEdgeId[edge.id] = waypoints;
+          if (controlPoint) {
+            baseControlPointsByEdgeId[edge.id] = controlPoint;
           }
         }
       });
@@ -991,7 +905,7 @@ function App() {
             { x: node.position.x, y: node.position.y }
           ])
         ),
-        baseWaypointsByEdgeId,
+        baseControlPointsByEdgeId,
         lastDelta: { x: 0, y: 0 }
       };
     },
@@ -1029,12 +943,12 @@ function App() {
         return;
       }
 
-      if (Object.keys(movingLayoutSession.baseWaypointsByEdgeId).length > 0) {
+      if (Object.keys(movingLayoutSession.baseControlPointsByEdgeId).length > 0) {
         setEdges((currentEdges) =>
           currentEdges.map((edge) => {
-            const baseWaypoints = movingLayoutSession.baseWaypointsByEdgeId[edge.id];
+            const baseControlPoint = movingLayoutSession.baseControlPointsByEdgeId[edge.id];
 
-            if (!baseWaypoints) {
+            if (!baseControlPoint) {
               return edge;
             }
 
@@ -1044,9 +958,12 @@ function App() {
               ...edge,
               data: {
                 ...normalizedData,
-                layout: normalizeEdgeLayout({
-                  waypoints: translateEdgeWaypoints(baseWaypoints, nextDelta)
-                })
+                layout: {
+                  controlPoint: translateEdgeControlPoint(
+                    baseControlPoint,
+                    nextDelta
+                  )
+                }
               }
             };
           })
@@ -1153,60 +1070,39 @@ function App() {
 
   const renderEdges = useMemo(
     () =>
-      edges.map((edge) => ({
-        ...edge,
-        selectable: false,
-        selected: edge.id === selectedEdgeId,
-        data: {
-          ...normalizeCanvasEdgeData(edge.data),
-          powerState:
-            edgePowerStateByEdgeId[edge.id] ?? EDGE_POWER_STATE.DE_ENERGIZED,
-          onAddWaypoint: (insertIndex, position) => {
-            addEdgeWaypoint(edge.id, insertIndex, position);
-          },
-          onMoveWaypoint: (waypointId, position) => {
-            moveEdgeWaypoint(edge.id, waypointId, position);
-          },
-          onRemoveWaypoint: (waypointId) => {
-            removeEdgeWaypoint(edge.id, waypointId);
-          },
-          onToggleBreaker:
-            normalizeCanvasEdgeType(edge.type) === EDGE_TYPE.BREAKER
-              ? () => {
-                  const nextState = getNextBreakerState(edge.data?.breakerState);
+      edges.map((edge) => {
+        const normalizedEdgeData = normalizeCanvasEdgeData(edge.data);
 
-                  if (isRecordingMop) {
-                    setPendingMopAction({
-                      targetId: edge.id,
-                      actionType: MOP_ACTION_TYPE.TOGGLE_BREAKER,
-                      targetState:
-                        nextState === BREAKER_STATE.CLOSED
-                          ? BREAKER_STATE.CLOSED
-                          : BREAKER_STATE.OPEN,
-                      actionText:
-                        nextState === BREAKER_STATE.CLOSED
-                          ? `Closed Breaker ${edge.id}`
-                          : `Opened Breaker ${edge.id}`
+        return {
+          ...edge,
+          selectable: false,
+          data: {
+            ...normalizedEdgeData,
+            powerState:
+              edgePowerStateByEdgeId[edge.id] ?? EDGE_POWER_STATE.DE_ENERGIZED,
+            onMoveControlPoint: (position) => {
+              moveEdgeControlPoint(edge.id, position);
+            },
+            onToggleBreaker:
+              normalizeCanvasEdgeType(edge.type) === EDGE_TYPE.BREAKER
+                ? () => {
+                    requestBreakerToggle({
+                      ...edge,
+                      data: normalizedEdgeData
                     });
                   }
-
-                  applyBreakerState(edge.id, nextState);
-                }
-              : undefined,
-          onDeleteEdge: () => {
-            void handleDeleteEdgeRequest(edge.id);
+                : undefined,
+            onDeleteEdge: () => {
+              void handleDeleteEdgeRequest(edge.id);
+            }
           }
-        }
-      })),
+        };
+      }),
     [
       edges,
-      selectedEdgeId,
       edgePowerStateByEdgeId,
-      addEdgeWaypoint,
-      moveEdgeWaypoint,
-      removeEdgeWaypoint,
-      isRecordingMop,
-      applyBreakerState,
+      moveEdgeControlPoint,
+      requestBreakerToggle,
       handleDeleteEdgeRequest
     ]
   );
@@ -1283,7 +1179,6 @@ function App() {
         setIsRecordingMop(false);
         setPendingMopAction(null);
         setActivePropertiesNodeId(null);
-        setSelectedEdgeId(null);
         movingEdgeLayoutRef.current = null;
         setNodes(normalizedAppState.nodes);
         setEdges(normalizedAppState.edges);
@@ -1314,7 +1209,6 @@ function App() {
     setIsRecordingMop(false);
     setPendingMopAction(null);
     setActivePropertiesNodeId(null);
-    setSelectedEdgeId(null);
     movingEdgeLayoutRef.current = null;
     setMopSteps([]);
     setMopBaseSnapshot(null);
@@ -1367,9 +1261,9 @@ function App() {
 
   const onEdgeClick = useCallback(
     (_event, edge) => {
-      setSelectedEdgeId(edge.id);
+      requestBreakerToggle(edge);
     },
-    []
+    [requestBreakerToggle]
   );
 
   const defaultEdgeOptions = useMemo(
@@ -1430,17 +1324,6 @@ function App() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onPaneClick={() => {
-              setSelectedEdgeId(null);
-            }}
-            onNodeClick={() => {
-              setSelectedEdgeId(null);
-            }}
-            onSelectionChange={({ nodes: selectedNodes }) => {
-              if (selectedNodes.length > 0) {
-                setSelectedEdgeId(null);
-              }
-            }}
             onEdgeClick={onEdgeClick}
             onNodeDragStart={handleNodeDragStart}
             onNodeDrag={handleNodeDrag}
