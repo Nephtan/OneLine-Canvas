@@ -27,6 +27,7 @@
 | Working Tree | `working-tree` | `2026-04-20` | `Add UPS node, directional power flow, and switchboard bottom landing` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Expand node editability and breaker-based source display` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Implement operator-facing Fed From and canvas copy/paste` | Implemented |
+| Working Tree | `working-tree` | `2026-04-20` | `Correct switchboard Fed From precedence with ExampleTopology regression coverage` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -383,6 +384,21 @@
   - Multi-feed nodes intentionally collapse to one preferred `Fed From` label; there is still no secondary operator cue for the other simultaneous live feeders on the card.
   - Copy/paste is keyboard-only and app-local; there is still no explicit toolbar action or external clipboard exchange format.
 
+### Working Tree Update: Switchboard Fed From Precedence and ExampleTopology Regression
+- Revision: `working-tree`
+- Date: `2026-04-20`
+- Subject: `Correct switchboard Fed From precedence with ExampleTopology regression coverage`
+- Major additions:
+  - Refined operator-facing `Fed From` selection so handle-aware arrival precedence distinguishes preferred inbound feeds from downstream return corridors on one-bus switchboards.
+  - Added fixture-backed regression coverage against `ExampleTopology/NTT-CH3-TOPOLOGY.json` for `CH3-MSB-301D -> CH3-PTX-301D` and `CH3-MSB-301E -> CH3-PTX-301E`.
+  - Added a focused engine test proving a switchboard main input beats both bottom-return and source-side return candidates without changing electrical live-state results.
+- Engine-state evolution:
+  - Traversal packets now carry a `fedFromArrivalRank` alongside the existing operator-facing feeder metadata so packet dedupe and candidate selection stay stable when the same node is reached through multiple handle classes.
+  - `Fed From` comparison now ranks candidates by inbound-handle precedence first, then feeder distance, then overall path hops, then lexical node id.
+- Unresolved items at phase end:
+  - Multi-feed nodes still collapse to one preferred `Fed From` label even when more than one inbound source is healthy.
+  - Switchboard bottom-return landings remain electrically valid on the one-bus model, but the UI still offers no secondary cue distinguishing them from the main top feed on the card.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
@@ -504,16 +520,18 @@
   - Expanded the shared properties modal from a switchboard / UPS-focused editor into a broader node editor covering source online state, sync groups, transfer active source, and descriptive/rating metadata across the current node lineup.
   - Canonical node normalization now preserves `ratedCurrentAmps` on MVSG, load, transfer-switch, and mechanical gear, while descriptive class fields fall back cleanly when operators clear them.
   - Replaced node-card `Sources` text with a single `Fed From` label driven by preferred live-feeder provenance and live label remapping, while leaving electrical source aggregation untouched.
+  - Refined `Fed From` precedence so switchboard main-input arrivals outrank bottom-return and source-side return corridors, with the CH3 ExampleTopology fixture locked in as a regression guard.
   - Added app-local keyboard copy/paste for selected subgraphs, including internal-edge filtering, cursor-anchored paste placement, grid-snapped geometry, and preserved edge midpoint routing.
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
   - Queue-based packet propagation over dynamically built adjacency from the current canvas graph.
-  - Each packet now carries `{ sourceId, voltage, displaySourceNodeId, fedFromNodeId, hasBreakerBoundary, fedFromDistance, pathHopCount }`, so electrical state, breaker-boundary provenance, and preferred operator-facing feeder attribution can be evaluated in one memoized traversal pass.
+  - Each packet now carries `{ sourceId, voltage, displaySourceNodeId, fedFromNodeId, hasBreakerBoundary, fedFromArrivalRank, fedFromDistance, pathHopCount }`, so electrical state, breaker-boundary provenance, and preferred operator-facing feeder attribution can be evaluated in one memoized traversal pass.
   - Conductive edges are added to adjacency only after edge-type and ATS-handle evaluation: `breaker` edges must be `closed`, while `standard` wires conduct unless an ATS interlock blocks that branch.
   - Display-source attribution remains independent from electrical source attribution: crossing a closed breaker resets the packet display boundary to the current node, while standard wires and internal PTX / ATS / UPS conduction preserve the last breaker boundary.
   - `Fed From` attribution is a second parallel operator-facing layer: breakers set the feeder to the breaker-side node, wires before any breaker boundary reset to the nearest upstream node, wires after a breaker boundary preserve that feeder, and PTX / ATS / UPS internal conduction preserve the current feeder candidate.
-  - Each node resolves one preferred `fedFromNodeId` by shortest feeder distance first, shortest overall energized path second, and lexical node-id tie-break third.
+  - `Fed From` selection is now handle-aware: preferred top/input arrivals beat lower-priority bottom-return arrivals, which in turn beat source-side/output return paths when the same node sees multiple live corridors.
+  - Each node resolves one preferred `fedFromNodeId` by arrival-rank precedence first, shortest feeder distance second, shortest overall energized path third, and lexical node-id tie-break fourth.
 - Voltage handling:
   - Root sources inject their own `nominalVoltage` into the traversal when online.
   - Non-transformer nodes conduct packets unchanged and mark `Voltage Fault` whenever any incoming packet voltage differs from their `nominalVoltage`.
@@ -561,6 +579,7 @@
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
 - Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
 - Canvas `Fed From:` readouts must use `fedFromNodeIdByNodeId` mapped through current node labels; `displaySourceNodeIdsByNodeId` is now provenance/debug output only and must not drive the operator-facing card label.
+- `Fed From` precedence must remain handle-aware: supply-side inbound landings outrank switchboard bottom-return corridors, and any source-side/output-side return remains fallback-only when a healthier inbound feeder is present.
 - PTX handle semantics are deterministic: `ptx-bus-in` and `ptx-bus-loop-target` are primary targets, `ptx-bus-in-source` and `ptx-bus-loop` are primary MV sources, and `ptx-bus-out` remains the stepped secondary source.
 - PTX rendering must expose only two visible top-edge operator terminals even though four logical primary handles exist internally for strict source/target connectivity.
 - PTX conduction is side-aware and idealized: matched primary or secondary arrivals energize the internal primary bus, any primary-side edge tied to that bus can then conduct for compatibility, matched primary paths still transform to `secondaryVoltage`, matched secondary paths still step back up to `primaryVoltage`, and mismatched arrivals block that direction.
@@ -604,7 +623,7 @@
 - Continuity and topology-key behavior for open/closed breaker paths.
 - Standard-wire continuity, mixed breaker/wire corridors, and edge-type topology-key invalidation.
 - Breaker-boundary display-source attribution, including breaker-then-wire inheritance, downstream-breaker boundary reset, direct-wire empty display provenance, PTX secondary downstream attribution, and multi-feed display-source aggregation.
-- Operator-facing `Fed From` attribution, including breaker-fed inheritance, wire-only nearest-upstream selection, PTX / ATS / UPS pass-through preservation, preferred-feeder collapse on multi-feed corridors, lexical tie resolution, and backfed-source provenance.
+- Operator-facing `Fed From` attribution, including breaker-fed inheritance, wire-only nearest-upstream selection, PTX / ATS / UPS pass-through preservation, handle-aware switchboard precedence, ExampleTopology-backed CH3 regression coverage, preferred-feeder collapse on multi-feed corridors, lexical tie resolution, and backfed-source provenance.
 - Source aggregation with explicit assertions for `Backfeed` and `Phase Conflict`.
 - Sync-group-aware conflict resolution for same-group parallel, blank/mixed-group conflict, and normalization behavior.
 - Edge power-state mapping (`de-energized`, `energized`, `phase-conflict`).

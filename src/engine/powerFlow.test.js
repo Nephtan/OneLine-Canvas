@@ -21,6 +21,7 @@ import {
   DEFAULT_MEDIUM_VOLTAGE
 } from "../electrical/voltage";
 import { normalizeGraphState } from "../nodes/nodeData";
+import exampleTopology from "../../ExampleTopology/NTT-CH3-TOPOLOGY.json";
 
 function utilityNode(id, options = {}) {
   return {
@@ -163,6 +164,16 @@ function standardEdge(id, source, target, handleOptions = {}) {
     ...handleOptions,
     data: {}
   };
+}
+
+function getNodeByLabel(nodes, label) {
+  const matchingNode = nodes.find((node) => node.data?.label === label);
+
+  if (!matchingNode) {
+    throw new Error(`Missing node with label "${label}"`);
+  }
+
+  return matchingNode;
 }
 
 describe("evaluatePowerFlow", () => {
@@ -385,6 +396,64 @@ describe("evaluatePowerFlow", () => {
 
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.BACKFEED);
     expect(fedFromNodeIdByNodeId["utility-a"]).toBe("mvsg-a");
+  });
+
+  it("prefers a switchboard main input over downstream return corridors", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      ptxNode("ptx-a"),
+      switchboardNode("swbd-a"),
+      upsNode("ups-a"),
+      mechanicalNode("mech-a")
+    ];
+    const edges = [
+      breakerEdge("utility-feed", "utility-a", "ptx-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      breakerEdge("main-feed", "ptx-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY,
+        targetHandle: "switchboard-bus-in"
+      }),
+      breakerEdge("ups-line", "swbd-a", "ups-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: "switchboard-bus-out",
+        targetHandle: UPS_HANDLE_ID.INPUT
+      }),
+      breakerEdge("ups-return", "ups-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-bottom-in"
+      }),
+      breakerEdge("mechanical-feed", "swbd-a", "mech-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: "switchboard-bus-out",
+        targetHandle: "mechanical-bus-in"
+      })
+    ];
+    const { fedFromNodeIdByNodeId, powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["ups-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["mech-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(fedFromNodeIdByNodeId["swbd-a"]).toBe("ptx-a");
+  });
+
+  it("resolves the CH3 301D and 301E switchboards to their PTX feeders in the example topology", () => {
+    const graph = normalizeGraphState(exampleTopology);
+    const { fedFromNodeIdByNodeId, powerStateByNodeId } = evaluatePowerFlow(
+      graph.nodes,
+      graph.edges
+    );
+    const labelById = new Map(graph.nodes.map((node) => [node.id, node.data.label]));
+
+    for (const [switchboardLabel, expectedFedFromLabel] of [
+      ["CH3-MSB-301D", "CH3-PTX-301D"],
+      ["CH3-MSB-301E", "CH3-PTX-301E"]
+    ]) {
+      const switchboard = getNodeByLabel(graph.nodes, switchboardLabel);
+
+      expect(powerStateByNodeId[switchboard.id]).toBe(NODE_POWER_STATE.LIVE);
+      expect(labelById.get(fedFromNodeIdByNodeId[switchboard.id])).toBe(
+        expectedFedFromLabel
+      );
+    }
   });
 
   it("keeps two independent feeders healthy with an open tie", () => {
