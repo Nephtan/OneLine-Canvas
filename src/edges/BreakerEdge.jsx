@@ -1,5 +1,5 @@
+import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from "@xyflow/react";
 import EdgeDeleteButton from "../components/EdgeDeleteButton";
-import OrthogonalEdge from "../components/OrthogonalEdge";
 import {
   BREAKER_STATE,
   EDGE_POWER_STATE,
@@ -40,14 +40,26 @@ const TRIPPED_EDGE_STYLE = {
 
 function BreakerEdge({
   id,
-  data,
-  selected,
-  ...edgeProps
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data
 }) {
   const breakerState = normalizeBreakerState(data?.breakerState);
   const edgePowerState = data?.powerState ?? EDGE_POWER_STATE.DE_ENERGIZED;
   const isClosed = breakerState === BREAKER_STATE.CLOSED;
   const isTripped = breakerState === BREAKER_STATE.TRIPPED;
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition
+  });
   const edgeStyle = isTripped
     ? TRIPPED_EDGE_STYLE
     : !isClosed
@@ -79,38 +91,34 @@ function BreakerEdge({
         : "border-slate-400 bg-slate-800/95 text-slate-200";
 
   return (
-    <OrthogonalEdge
-      id={id}
-      data={data}
-      selected={selected}
-      edgeStyle={edgeStyle}
-      className="cursor-pointer"
-      label={
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            title={`Toggle breaker ${id}`}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              data?.onToggleBreaker?.();
-            }}
-            className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${labelClassName}`}
-          >
-            {edgeLabel}
-          </button>
-          <EdgeDeleteButton
-            title={`Delete breaker ${id}`}
-            onDelete={data?.onDeleteEdge}
-          />
+    <>
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={edgeStyle}
+        interactionWidth={34}
+        className="cursor-pointer"
+      />
+
+      <EdgeLabelRenderer>
+        <div
+          style={{ left: `${labelX}px`, top: `${labelY}px` }}
+          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+        >
+          <div className="flex items-center gap-2">
+            <div
+              className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${labelClassName}`}
+            >
+              {edgeLabel}
+            </div>
+            <EdgeDeleteButton
+              title={`Delete breaker ${id}`}
+              onDelete={data?.onDeleteEdge}
+            />
+          </div>
         </div>
-      }
-      {...edgeProps}
-    />
+      </EdgeLabelRenderer>
+    </>
   );
 }
 

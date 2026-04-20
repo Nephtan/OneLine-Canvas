@@ -13,7 +13,6 @@ import {
   normalizeVoltageValue
 } from "../electrical/voltage";
 import { isTransformerNodeType } from "../topology/transformer";
-import { normalizeCanvasEdgeData } from "../canvas/edgeLayout";
 
 function isSourceNodeType(nodeType) {
   return nodeType === "utility" || nodeType === "generator";
@@ -169,8 +168,7 @@ export function normalizeGraphState(graph) {
       const targetNode = nodeById.get(edge.target);
       const normalizedEdge = {
         ...edge,
-        type: normalizeCanvasEdgeType(edge.type),
-        data: normalizeCanvasEdgeData(edge.data)
+        type: normalizeCanvasEdgeType(edge.type)
       };
 
       if (!isTransferSwitchNodeType(targetNode?.type)) {

@@ -37,10 +37,8 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 
 ## UI and Workflow Coverage
 - [ ] Add automated UI coverage for delete controls, breaker-vs-wire draw mode selection, SCADA actions, and MOP recording or playback flows.
-- [ ] Add automated UI coverage for grid snapping, orthogonal edge rerouting, and marquee multi-node selection or movement workflows.
 - [ ] Expand the new properties modal beyond voltage into current, device ratings, and richer equipment-specific electrical metadata.
 - [ ] Define how electrical metadata editing should scale across large project topologies without overloading the canvas UI.
-- [ ] Decide whether future canvas routing should stay purely manual or gain obstacle-avoidance and route-cleanup assistance on top of the new snapped waypoint editor.
 
 ## Documentation Alignment
 - [ ] Keep `handoff.md` source-map revisions aligned with committed history whenever new phases move from working tree to commit.
