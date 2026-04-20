@@ -126,6 +126,18 @@ function EquipmentPalette({
         <button
           type="button"
           draggable
+          onDragStart={(event) => onDragStart(event, "ups")}
+          className="w-full cursor-grab rounded border border-cyan-500/60 bg-slate-800 px-3 py-2 text-left active:cursor-grabbing"
+        >
+          <div className="text-[10px] uppercase tracking-[0.2em] text-cyan-300/85">
+            UPS
+          </div>
+          <div className="mt-1 text-xs text-cyan-100">Critical power UPS</div>
+        </button>
+
+        <button
+          type="button"
+          draggable
           onDragStart={(event) => onDragStart(event, "mvsg")}
           className="w-full cursor-grab rounded border border-sky-500/60 bg-slate-800 px-3 py-2 text-left active:cursor-grabbing"
         >

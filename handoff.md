@@ -24,6 +24,7 @@
 | Feature Update | `273fa4c` | `2026-04-17` | `Add dual-ended PTX primary terminals` | Committed |
 | Working Tree | `working-tree` | `2026-04-17` | `Repair PTX top-edge terminal visuals` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Add grid-snapped node layout and draggable edge midpoints` | Implemented |
+| Working Tree | `working-tree` | `2026-04-20` | `Add UPS node, directional power flow, and switchboard bottom landing` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -348,6 +349,23 @@
   - Midpoint routing currently supports one absolute snapped bend anchor per edge; there is no reset-to-auto affordance, multi-bend editing, or obstacle-aware autorouting yet.
   - Automated UI coverage still does not exercise node snap behavior or midpoint-drag workflows.
 
+### Working Tree Update: UPS Node, Directional Power Flow, and Switchboard Bottom Landing
+- Revision: `working-tree`
+- Date: `2026-04-20`
+- Subject: `Add UPS node, directional power flow, and switchboard bottom landing`
+- Major additions:
+  - Added a new `ups` equipment type with canonical metadata for `operatingMode`, `batteryAvailable`, `syncGroup`, `ratedCurrentAmps`, `kvaRating`, `batteryRuntimeMinutes`, and `upsClass`.
+  - Added a complex UPS node shell with top input / bottom output handles, mode controls for `Normal`, `Battery`, and `Bypass`, and operational readouts for battery status and ratings.
+  - Expanded switchboard geometry with a bottom-edge target hitbox (`switchboard-bus-bottom-in`) that lands on the same one-bus switchboard as the existing top target, allowing UPS output to reconnect into either edge of downstream switchboards.
+  - Extended the shared properties modal and SCADA panel so UPS mode control, battery availability visibility, and switchboard / UPS electrical metadata are editable and visible from first-class UI surfaces.
+- Engine-state evolution:
+  - Added handle-aware UPS traversal rules so `normal` and `bypass` conduct input-to-output only on matching voltage, while `battery` seeds the UPS output with the UPS node's own source identity and never backfeeds the input side.
+  - Extended topology-key invalidation to include UPS mode, battery availability, UPS sync groups, and bottom-vs-top switchboard landing handle changes without invalidating on label-only or layout-only edits.
+  - Expanded engine tests to cover UPS directional behavior, battery-mode source IDs and sync-group paralleling, wrong-voltage UPS faulting, and the new switchboard bottom-landing corridor.
+- Unresolved items at phase end:
+  - UPS behavior remains intentionally first-pass: one line input, one load output, no separate rectifier input, static bypass input, maintenance bypass path, or automatic source-fail sensing.
+  - UPS battery availability is modeled manually; there is still no runtime depletion, charger state, or timed transfer / retransfer sequencing.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
@@ -416,6 +434,7 @@
 - Canonical electrical metadata and editor workflow:
   - Every node now persists canonical numeric voltage metadata through create, hydrate, export/import, autosave, and MOP snapshots.
   - A node-local properties gear opens a shared industrial modal for editing `label`, `nominalVoltage`, or PTX `primaryVoltage` / `secondaryVoltage`.
+  - Switchboards now preserve `boardClass` and optional `ratedCurrentAmps`, while UPS nodes preserve `operatingMode`, `batteryAvailable`, `syncGroup`, optional ratings, and runtime metadata through the same shared modal.
 - Source-aware dynamic power engine:
   - Topology extracted from live React Flow `nodes`/`edges`.
   - Only closed breakers (`edge.data.breakerState === "closed"`) are conductive and bi-directional.
@@ -450,6 +469,10 @@
   - `transferSwitch` nodes now expose two named inputs (`target-primary`, `target-emergency`) and one output bus with canonical `data.activeSource` control.
   - Legacy ATS inbound edges are normalized onto `target-primary` during graph hydration/import so older saved yards continue to conduct through the default primary path.
   - ATS throws are now MOP-recordable actions and replay purely through canonical snapshot application rather than any special transfer-sequence engine.
+- UPS critical-power modeling:
+  - Added a new `ups` node type with canonical `data.operatingMode`, `data.batteryAvailable`, `data.syncGroup`, `data.upsClass`, `data.ratedCurrentAmps`, `data.kvaRating`, and `data.batteryRuntimeMinutes`.
+  - Switchboards remain one-bus gear, but now expose an additional bottom target landing (`switchboard-bus-bottom-in`) so UPS outputs can reconnect into downstream switchboards from either the top or bottom edge without creating a second bus section.
+  - UPS operating-mode throws are now MOP-recordable actions and SCADA-controllable actions alongside source toggles and ATS throws.
 - Voltage-aware electrical modeling:
   - All non-PTX gear now compares incoming propagated voltage against `nominalVoltage` and resolves any mismatch as `Voltage Fault`.
   - PTXs now expose explicit dual-ended primary-bus handle roles (`ptx-bus-in`, `ptx-bus-in-source`, `ptx-bus-loop-target`, `ptx-bus-loop`) plus the existing `ptx-bus-out` secondary handle so MV daisy-chains can be modeled directly on either transformer input terminal.
@@ -469,9 +492,11 @@
 - Voltage handling:
   - Root sources inject their own `nominalVoltage` into the traversal when online.
   - Non-transformer nodes conduct packets unchanged and mark `Voltage Fault` whenever any incoming packet voltage differs from their `nominalVoltage`.
+  - Battery-mode UPS nodes now inject their own `nominalVoltage` on the output side only, using the UPS node `id` as the propagated source identity so sync-group checks can evaluate UPS-to-UPS paralleling without synthetic source records.
   - PTX side detection is now explicit-handle-aware: `ptx-bus-in` and `ptx-bus-loop-target` are primary targets, `ptx-bus-in-source` and `ptx-bus-loop` are primary MV sources, and `ptx-bus-out` is the stepped secondary source.
   - PTXs evaluate packets by arrival side: matched primary arrivals on either top terminal energize the full internal primary bus, matched secondary arrivals step back up to `primaryVoltage`, and either matched path can propagate MV packets across chained PTX primary corridors while keeping legacy primary-target edges electrically tied to that bus.
   - A PTX voltage mismatch blocks conduction through that direction only, leaving the far side dark while the PTX itself renders as `Voltage Fault`.
+  - UPSs now evaluate packets by handle role: `normal` and `bypass` conduct only from `ups-line-in` to `ups-load-out` on matching voltage, while `battery` keeps all conduction on the output side and blocks any output-to-input backfeed path.
 - Conflict and backfeed:
   - Multi-source overlap resolves to `Phase Conflict` only when the contributing source IDs do not all map to one shared, non-empty normalized sync group.
   - Blank sync groups are treated as unsynchronized/unknown and never safely parallel.
@@ -486,15 +511,17 @@
   - The control-room panel reads canonical `nodes` and `edges` only.
   - Remote source actuation and breaker reset are App-level state mutations layered on top of the existing engine output.
   - The MOP recorder also remains App/UI-only: it records operator actions, stores canonical snapshots, and replays them by overwriting `nodes`/`edges` without duplicating any engine calculations.
+  - SCADA now includes a UPS lineup with live operating-mode buttons, battery-availability visibility, and node power-state telemetry without duplicating any UPS physics inside the panel.
 - Canvas ergonomics:
   - Node and edge deletion now flows through native React Flow `deleteElements()` so topology pruning invalidates the graph naturally without manual dangling-edge cleanup logic.
   - New user-drawn connections always carry an explicit custom edge type (`breaker` or `standard`); React Flow fallback edges are no longer part of the supported topology contract.
   - New node drops, subsequent node drags, and manual edge midpoint reroutes all snap to the shared `24px` grid; legacy saved layouts are preserved until the operator touches them.
   - Breaker status pills and standard-wire midpoint grab rails now double as drag handles for rerouting without interfering with breaker toggles or delete controls.
 - Recompute and memoization:
-  - Topology key includes node identity/type plus root-source online signatures, normalized root sync-group signatures, and transfer-switch `activeSource`.
-  - Topology key includes edge type, source/target, source-handle/target-handle IDs, and breaker state (`open`, `closed`, `tripped`) where applicable.
-  - Position-only drags, manual midpoint reroutes, and label-only renames do not invalidate traversal cache.
+- Topology key includes node identity/type plus root-source online signatures, normalized root sync-group signatures, and transfer-switch `activeSource`.
+- Topology key also includes UPS `operatingMode`, UPS `batteryAvailable`, and UPS `syncGroup`, plus any source/target handle differences such as switchboard top-vs-bottom landings.
+- Topology key includes edge type, source/target, source-handle/target-handle IDs, and breaker state (`open`, `closed`, `tripped`) where applicable.
+- Position-only drags, manual midpoint reroutes, and label-only renames do not invalidate traversal cache.
 
 ### Locked Behavioral Contracts for Implementers
 - Topology source of truth is always live React Flow `nodes`/`edges`; no hardcoded adjacency is permitted.
@@ -514,9 +541,13 @@
 - Visual state precedence is locked to `Voltage Fault > Phase Conflict > Backfeed > Live > Dead`, but phase-conflict flags must remain available for breaker trip logic and future diagnostics.
 - `transferSwitch` nodes now require canonical `data.activeSource` of `"primary"` or `"emergency"`.
 - ATS inactive feeder edges must behave exactly like open branches: non-conductive, `de-energized`, and excluded from conflict/trip evaluation.
+- `ups` nodes now require canonical `data.operatingMode` of `"normal"`, `"battery"`, or `"bypass"` and canonical `data.batteryAvailable` boolean state.
+- UPS handle semantics are deterministic: `ups-line-in` is the only inbound line-side handle and `ups-load-out` is the only outbound load-side handle.
+- Switchboards remain electrically one-bus gear even though they now expose two inbound landings (`switchboard-bus-in` and `switchboard-bus-bottom-in`) plus one outbound landing (`switchboard-bus-out`).
+- UPS conduction is intentionally directional: `normal` and `bypass` pass matching voltage from input to output only, `battery` seeds and conducts on the output side only, and no UPS mode permits output-to-input backfeed.
 - SCADA panel must remain a pure UI controller and must not implement or duplicate physics calculations.
 - MOP playback must remain a canonical state-overwrite layer on top of React Flow state; it must not simulate clicks or fork the power engine.
-- MOP actions now include ATS throws plus explicit node/edge delete keyframes in addition to source toggles and breaker toggles.
+- MOP actions now include ATS throws, UPS mode throws, plus explicit node/edge delete keyframes in addition to source toggles and breaker toggles.
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
 - Sync groups still model source identity only; there is no phase-angle, frequency, or breaker permissive-window simulation beyond the new node/PTX voltage matching rules.
@@ -531,6 +562,7 @@
 - `Clear Yard` remains destructive with no confirmation/undo stack.
 - Source controls are now available both node-local and via SCADA, and Phase 12 adds linear scenario playback, but there is still no scripted SOO automation, batch editing, timeline branching, or timed autoplay layer.
 - ATS nodes now prevent primary/emergency source paralleling internally, but they do not yet implement automatic transfer, source-fail sensing, permissive timers, or neutral-position logic.
+- UPS nodes now model directional line-vs-load isolation, but they do not yet implement separate rectifier / bypass inputs, maintenance bypass paths, automatic source-fail sensing, battery depletion, or charger-state behavior.
 - PTX primary daisy-chains are currently modeled as always-continuous internal buses; explicit S1/S2-style MV switch states or isolation points are not yet operator-editable.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 - `npm run check:deps` currently assumes a clean `node_modules`; Vite temp directories such as `.vite` and `.vite-temp` can trigger false-positive extraneous-package failures after normal dev/build/test activity.
@@ -550,6 +582,7 @@
 - Generator root propagation, generator-offline behavior, utility+generator tie conflict, and generator topology-key invalidation.
 - Root sync-group topology-key invalidation and label-only cache stability.
 - ATS interlock behavior on both breaker and standard-wire feeders plus end-to-end chain propagation through `generator -> switchboard -> transferSwitch -> mechanical`.
+- UPS directional behavior, battery-mode source identities and sync-group paralleling, wrong-voltage UPS faulting, top-vs-bottom switchboard bus landing, and UPS topology-key invalidation.
 - Graph normalization coverage for numeric voltage metadata and recognizable legacy voltage-string imports.
 - Topology-key cache stability for layout-only node-position changes, label-only renames, and manual edge midpoint routing metadata.
 
@@ -560,4 +593,5 @@
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
 - No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, delete-button workflows, snap-to-grid layout behavior, midpoint edge rerouting, or the breaker vs solid-wire connection tool.
+- No dedicated UI tests yet cover UPS mode buttons, switchboard bottom-edge connection hitboxes, or battery-availability editing flows.
 - Automated simulation test execution beyond dependency validation still depends on the current workspace toolchain remaining installed and healthy.

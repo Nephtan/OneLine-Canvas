@@ -16,6 +16,7 @@ import PTXNode from "./nodes/PTXNode";
 import LoadNode from "./nodes/LoadNode";
 import SwitchboardNode from "./nodes/SwitchboardNode";
 import TransferSwitchNode from "./nodes/TransferSwitchNode";
+import UpsNode from "./nodes/UpsNode";
 import MechanicalNode from "./nodes/MechanicalNode";
 import BreakerEdge from "./edges/BreakerEdge";
 import StandardEdge from "./edges/StandardEdge";
@@ -36,6 +37,11 @@ import {
   normalizeTransferSwitchActiveSource
 } from "./topology/transferSwitch";
 import {
+  formatUpsOperatingMode,
+  isUpsNodeType,
+  normalizeUpsOperatingMode
+} from "./topology/ups";
+import {
   EDGE_TYPE,
   normalizeCanvasEdgeType
 } from "./topology/edgeTypes";
@@ -49,6 +55,7 @@ const nodeTypes = {
   load: LoadNode,
   switchboard: SwitchboardNode,
   transferSwitch: TransferSwitchNode,
+  ups: UpsNode,
   mechanical: MechanicalNode
 };
 
@@ -62,6 +69,7 @@ const MOP_ACTION_TYPE = {
   TOGGLE_SOURCE: "TOGGLE_SOURCE",
   TOGGLE_BREAKER: "TOGGLE_BREAKER",
   THROW_TRANSFER_SWITCH: "THROW_TRANSFER_SWITCH",
+  SET_UPS_MODE: "SET_UPS_MODE",
   DELETE_NODE: "DELETE_NODE",
   DELETE_EDGE: "DELETE_EDGE"
 };
@@ -117,6 +125,10 @@ function normalizeMopTargetState(actionType, targetState) {
     return normalizeTransferSwitchActiveSource(targetState);
   }
 
+  if (actionType === MOP_ACTION_TYPE.SET_UPS_MODE) {
+    return normalizeUpsOperatingMode(targetState);
+  }
+
   if (
     actionType === MOP_ACTION_TYPE.DELETE_NODE ||
     actionType === MOP_ACTION_TYPE.DELETE_EDGE
@@ -136,6 +148,10 @@ function getDefaultMopActionText(actionType, targetId, targetState) {
 
   if (actionType === MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH) {
     return `Transfer ${targetId} to ${formatTransferSwitchActiveSource(targetState)}`;
+  }
+
+  if (actionType === MOP_ACTION_TYPE.SET_UPS_MODE) {
+    return `Set ${targetId} to ${formatUpsOperatingMode(targetState)}`;
   }
 
   if (
@@ -164,6 +180,7 @@ function normalizeMopSteps(value) {
         (step.actionType !== MOP_ACTION_TYPE.TOGGLE_SOURCE &&
           step.actionType !== MOP_ACTION_TYPE.TOGGLE_BREAKER &&
           step.actionType !== MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH &&
+          step.actionType !== MOP_ACTION_TYPE.SET_UPS_MODE &&
           step.actionType !== MOP_ACTION_TYPE.DELETE_NODE &&
           step.actionType !== MOP_ACTION_TYPE.DELETE_EDGE) ||
         !isGraphStateShape(step.snapshot)
@@ -443,6 +460,35 @@ function App() {
     [setNodes]
   );
 
+  const applyUpsOperatingMode = useCallback(
+    (nodeId, nextOperatingMode) => {
+      const normalizedNextOperatingMode = normalizeUpsOperatingMode(nextOperatingMode);
+
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (node.id !== nodeId || !isUpsNodeType(node.type)) {
+            return node;
+          }
+
+          const nodeData = normalizeNodeData(node);
+
+          if (nodeData.operatingMode === normalizedNextOperatingMode) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...nodeData,
+              operatingMode: normalizedNextOperatingMode
+            }
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
   const renameNodeLabel = useCallback(
     (nodeId, nextLabel) => {
       setNodes((currentNodes) =>
@@ -606,6 +652,37 @@ function App() {
       applyTransferSwitchActiveSource(nodeId, normalizedNextActiveSource);
     },
     [nodes, isRecordingMop, applyTransferSwitchActiveSource]
+  );
+
+  const handleUpsOperatingModeRequest = useCallback(
+    (nodeId, nextOperatingMode) => {
+      const upsNode = nodes.find((node) => node.id === nodeId);
+
+      if (!upsNode || !isUpsNodeType(upsNode.type)) {
+        return;
+      }
+
+      const upsNodeData = normalizeNodeData(upsNode);
+      const normalizedNextOperatingMode = normalizeUpsOperatingMode(nextOperatingMode);
+
+      if (upsNodeData.operatingMode === normalizedNextOperatingMode) {
+        return;
+      }
+
+      if (isRecordingMop) {
+        setPendingMopAction({
+          targetId: nodeId,
+          actionType: MOP_ACTION_TYPE.SET_UPS_MODE,
+          targetState: normalizedNextOperatingMode,
+          actionText: `Set ${upsNodeData.label} to ${formatUpsOperatingMode(
+            normalizedNextOperatingMode
+          )}`
+        });
+      }
+
+      applyUpsOperatingMode(nodeId, normalizedNextOperatingMode);
+    },
+    [nodes, isRecordingMop, applyUpsOperatingMode]
   );
 
   const resetAllTrippedBreakers = useCallback(() => {
@@ -777,6 +854,10 @@ function App() {
             ? (nextActiveSource) =>
                 handleTransferSwitchThrowRequest(node.id, nextActiveSource)
             : undefined,
+          onChangeOperatingMode: isUpsNodeType(node.type)
+            ? (nextOperatingMode) =>
+                handleUpsOperatingModeRequest(node.id, nextOperatingMode)
+            : undefined,
           onOpenProperties: () => openNodeProperties(node.id),
           onDeleteNode: () => {
             void handleDeleteNodeRequest(node.id);
@@ -793,6 +874,7 @@ function App() {
       handleSourceToggleRequest,
       changeNodeSyncGroup,
       handleTransferSwitchThrowRequest,
+      handleUpsOperatingModeRequest,
       openNodeProperties,
       handleDeleteNodeRequest
     ]
@@ -943,6 +1025,7 @@ function App() {
           nodeType !== "load" &&
           nodeType !== "switchboard" &&
           nodeType !== "transferSwitch" &&
+          nodeType !== "ups" &&
           nodeType !== "mechanical")
       ) {
         return;
@@ -1046,6 +1129,7 @@ function App() {
           edges={edges}
           powerStateByNodeId={powerStateByNodeId}
           onToggleSourceOnline={handleSourceToggleRequest}
+          onChangeUpsOperatingMode={handleUpsOperatingModeRequest}
           onResetAllBreakers={resetAllTrippedBreakers}
           hasMopBaseSnapshot={Boolean(mopBaseSnapshot)}
           isRecordingMop={isRecordingMop}

@@ -5,6 +5,10 @@ import {
   normalizeTransferSwitchActiveSource,
   normalizeTransferSwitchTargetHandle
 } from "../topology/transferSwitch";
+import {
+  isUpsNodeType,
+  normalizeUpsOperatingMode
+} from "../topology/ups";
 import { normalizeCanvasEdgeType } from "../topology/edgeTypes";
 import {
   DEFAULT_LOW_VOLTAGE,
@@ -64,6 +68,14 @@ const DEFAULT_NODE_DATA_BY_TYPE = {
     nominalVoltage: DEFAULT_LOW_VOLTAGE,
     boardClass: "Main Distribution Board"
   }),
+  ups: (labelSuffix) => ({
+    label: `UPS ${labelSuffix}`,
+    nominalVoltage: DEFAULT_LOW_VOLTAGE,
+    upsClass: "Double Conversion UPS",
+    batteryAvailable: true,
+    operatingMode: "normal",
+    syncGroup: ""
+  }),
   transferSwitch: (labelSuffix) => ({
     label: `ATS ${labelSuffix}`,
     nominalVoltage: DEFAULT_LOW_VOLTAGE,
@@ -106,6 +118,11 @@ function normalizeTransformerVoltages(currentData, fallbackData) {
   };
 }
 
+function normalizeOptionalPositiveInteger(value) {
+  const normalizedValue = normalizeVoltageValue(value, null);
+  return normalizedValue === null ? undefined : normalizedValue;
+}
+
 export function normalizeNodeData(node) {
   const fallbackData = getDefaultNodeData(node.type, node.id);
   const currentData =
@@ -141,7 +158,12 @@ export function normalizeNodeData(node) {
       typeof currentData.syncGroup === "string" ? currentData.syncGroup : "";
     nextData.isSourceOnline = currentData.isSourceOnline !== false;
   } else {
-    delete nextData.syncGroup;
+    if (isUpsNodeType(node.type)) {
+      nextData.syncGroup =
+        typeof currentData.syncGroup === "string" ? currentData.syncGroup : "";
+    } else {
+      delete nextData.syncGroup;
+    }
     delete nextData.isSourceOnline;
   }
 
@@ -151,6 +173,32 @@ export function normalizeNodeData(node) {
     );
   } else {
     delete nextData.activeSource;
+  }
+
+  if (node.type === "switchboard") {
+    nextData.boardClass =
+      typeof currentData.boardClass === "string" && currentData.boardClass.trim() !== ""
+        ? currentData.boardClass
+        : fallbackData.boardClass;
+    nextData.ratedCurrentAmps = normalizeOptionalPositiveInteger(
+      currentData.ratedCurrentAmps
+    );
+  }
+
+  if (isUpsNodeType(node.type)) {
+    nextData.upsClass =
+      typeof currentData.upsClass === "string" && currentData.upsClass.trim() !== ""
+        ? currentData.upsClass
+        : fallbackData.upsClass;
+    nextData.batteryAvailable = currentData.batteryAvailable !== false;
+    nextData.operatingMode = normalizeUpsOperatingMode(currentData.operatingMode);
+    nextData.ratedCurrentAmps = normalizeOptionalPositiveInteger(
+      currentData.ratedCurrentAmps
+    );
+    nextData.kvaRating = normalizeOptionalPositiveInteger(currentData.kvaRating);
+    nextData.batteryRuntimeMinutes = normalizeOptionalPositiveInteger(
+      currentData.batteryRuntimeMinutes
+    );
   }
 
   return nextData;

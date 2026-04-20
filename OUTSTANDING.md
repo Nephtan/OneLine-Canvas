@@ -4,7 +4,7 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 `handoff.md` remains the historical architecture narrative; this checklist tracks what still needs to be closed.
 
 ## Electrical Data Model
-- [ ] Expand the now-canonical node voltage metadata with optional `ratedCurrentAmps` and other equipment-specific ratings.
+- [ ] Extend the newly-added switchboard and UPS current/rating metadata pattern across the rest of the node lineup where ratings are still absent.
 - [ ] Add canonical editable electrical metadata for breaker, wire, switch, and future protective-device edges, including optional `ratedCurrentAmps` and device-specific rating fields.
 - [ ] Normalize equipment-specific metadata contracts so new, imported, and hydrated gear preserve electrical ratings consistently.
 - [ ] Define which metadata belongs on nodes versus edges for switchgear line/load terminals, breaker devices, and future protective schemes.
@@ -25,6 +25,11 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 - [ ] Add timer or delay semantics for transfer and retransfer behavior.
 - [ ] Model richer ATS or STS policies such as permissive logic, neutral positions, or non-overlap timing where needed.
 
+## UPS Modeling
+- [ ] Expand the first-pass UPS model beyond one line input / one load output into separate rectifier, static bypass, and maintenance-bypass interfaces where that realism matters.
+- [ ] Add automatic UPS source-fail sensing, battery-to-line transfer policy, and manual / automatic retransfer behavior instead of mode selection only.
+- [ ] Model UPS battery depletion, charger state, and runtime consumption instead of the current binary `batteryAvailable` flag.
+
 ## Validation and Import Safety
 - [ ] Replace shallow graph-shape import validation with deep schema and version-aware validation for node and edge payloads.
 - [ ] Add validation for malformed or incomplete electrical metadata so bad imports do not silently degrade simulation fidelity.
@@ -38,7 +43,8 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 ## UI and Workflow Coverage
 - [ ] Add automated UI coverage for grid snapping, manual edge midpoint routing, delete controls, breaker-vs-wire draw mode selection, SCADA actions, and MOP recording or playback flows.
 - [ ] Decide whether manual edge routing needs reset-to-auto controls, richer multi-bend editing, or obstacle-aware autorouting beyond the current single midpoint anchor.
-- [ ] Expand the new properties modal beyond voltage into current, device ratings, and richer equipment-specific electrical metadata.
+- [ ] Expand the new properties modal beyond the current switchboard / UPS support into broader equipment coverage, richer device ratings, and bulk-edit workflows.
+- [ ] Add UI validation or guided affordances around new multi-landing cases such as switchboard bottom-bus targets so operators can tell which landing is semantically equivalent versus electrically distinct.
 - [ ] Define how electrical metadata editing should scale across large project topologies without overloading the canvas UI.
 
 ## Documentation Alignment

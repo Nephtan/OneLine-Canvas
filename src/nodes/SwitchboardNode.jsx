@@ -101,6 +101,9 @@ function SwitchboardNode({ data }) {
           ? "border border-amber-100 bg-amber-300"
           : "border border-slate-300 bg-slate-500";
 
+  const bottomTargetHandleClassName =
+    "!h-4 !rounded-full !border-0 !bg-transparent !opacity-0";
+
   return (
     <div
       className={`${getNodeShellClassName(NODE_SIZE_FAMILY.STANDARD)} rounded-md border px-4 py-4 text-left ${shellClassName}`}
@@ -174,6 +177,18 @@ function SwitchboardNode({ data }) {
           width: "calc(100% - 20px)",
           left: 10,
           transform: "translate(0, 50%)"
+        }}
+      />
+      <Handle
+        id="switchboard-bus-bottom-in"
+        type="target"
+        position={Position.Bottom}
+        isConnectable
+        className={bottomTargetHandleClassName}
+        style={{
+          width: "calc(100% - 12px)",
+          left: 6,
+          transform: "translate(0, 55%)"
         }}
       />
     </div>

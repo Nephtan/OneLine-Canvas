@@ -11,6 +11,10 @@ import {
   TRANSFER_SWITCH_HANDLE_ID
 } from "../topology/transferSwitch";
 import { TRANSFORMER_HANDLE_ID } from "../topology/transformer";
+import {
+  UPS_HANDLE_ID,
+  UPS_OPERATING_MODE
+} from "../topology/ups";
 import { EDGE_TYPE as CANVAS_EDGE_TYPE } from "../topology/edgeTypes";
 import {
   DEFAULT_LOW_VOLTAGE,
@@ -106,6 +110,22 @@ function transferSwitchNode(id, options = {}) {
       nominalVoltage: options.nominalVoltage ?? DEFAULT_LOW_VOLTAGE,
       activeSource:
         options.activeSource ?? TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+    },
+    position: { x: 0, y: 0 }
+  };
+}
+
+function upsNode(id, options = {}) {
+  return {
+    id,
+    type: "ups",
+    data: {
+      label: id,
+      nominalVoltage: options.nominalVoltage ?? DEFAULT_LOW_VOLTAGE,
+      batteryAvailable:
+        options.batteryAvailable === undefined ? true : options.batteryAvailable,
+      operatingMode: options.operatingMode ?? UPS_OPERATING_MODE.NORMAL,
+      syncGroup: options.syncGroup ?? ""
     },
     position: { x: 0, y: 0 }
   };
@@ -1137,6 +1157,214 @@ describe("evaluatePowerFlow", () => {
     expect(faultedEdgeIds).toEqual([]);
   });
 
+  it("energizes a downstream switchboard when UPS output lands on the top bus handle", () => {
+    const nodes = [
+      generatorNode("gen-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      switchboardNode("swbd-upstream"),
+      upsNode("ups-a"),
+      switchboardNode("swbd-downstream")
+    ];
+    const edges = [
+      breakerEdge("gen-feed", "gen-a", "swbd-upstream", BREAKER_STATE.CLOSED),
+      breakerEdge("ups-input", "swbd-upstream", "ups-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: "switchboard-bus-out",
+        targetHandle: UPS_HANDLE_ID.INPUT
+      }),
+      breakerEdge("ups-output", "ups-a", "swbd-downstream", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-in"
+      })
+    ];
+    const { powerStateByNodeId, sourceIdsByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ups-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["swbd-downstream"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["swbd-downstream"]).toEqual(["gen-a"]);
+  });
+
+  it("energizes a downstream switchboard when UPS output lands on the bottom bus handle", () => {
+    const nodes = [
+      generatorNode("gen-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      switchboardNode("swbd-upstream"),
+      upsNode("ups-a"),
+      switchboardNode("swbd-downstream")
+    ];
+    const edges = [
+      breakerEdge("gen-feed", "gen-a", "swbd-upstream", BREAKER_STATE.CLOSED),
+      breakerEdge("ups-input", "swbd-upstream", "ups-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: "switchboard-bus-out",
+        targetHandle: UPS_HANDLE_ID.INPUT
+      }),
+      breakerEdge("ups-output", "ups-a", "swbd-downstream", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-bottom-in"
+      })
+    ];
+    const { powerStateByNodeId, sourceIdsByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ups-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["swbd-downstream"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["swbd-downstream"]).toEqual(["gen-a"]);
+  });
+
+  it("lets a battery-mode UPS energize downstream gear with a dead upstream feeder", () => {
+    const nodes = [
+      generatorNode("gen-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        isSourceOnline: false
+      }),
+      switchboardNode("swbd-upstream"),
+      upsNode("ups-a", {
+        operatingMode: UPS_OPERATING_MODE.BATTERY,
+        batteryAvailable: true
+      }),
+      switchboardNode("swbd-downstream")
+    ];
+    const edges = [
+      breakerEdge("gen-feed", "gen-a", "swbd-upstream", BREAKER_STATE.CLOSED),
+      breakerEdge("ups-input", "swbd-upstream", "ups-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: "switchboard-bus-out",
+        targetHandle: UPS_HANDLE_ID.INPUT
+      }),
+      breakerEdge("ups-output", "ups-a", "swbd-downstream", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-in"
+      })
+    ];
+    const { powerStateByNodeId, sourceIdsByNodeId, edgePowerStateByEdgeId } =
+      evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(powerStateByNodeId["swbd-upstream"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(powerStateByNodeId["ups-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(powerStateByNodeId["swbd-downstream"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(sourceIdsByNodeId["swbd-downstream"]).toEqual(["ups-a"]);
+    expect(edgePowerStateByEdgeId["ups-output"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+  });
+
+  it("does not backfeed the UPS input side while the UPS is on battery", () => {
+    const nodes = [
+      generatorNode("gen-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        isSourceOnline: false
+      }),
+      switchboardNode("swbd-upstream"),
+      upsNode("ups-a", {
+        operatingMode: UPS_OPERATING_MODE.BATTERY,
+        batteryAvailable: true
+      }),
+      switchboardNode("swbd-downstream")
+    ];
+    const edges = [
+      breakerEdge("gen-feed", "gen-a", "swbd-upstream", BREAKER_STATE.CLOSED),
+      breakerEdge("ups-input", "swbd-upstream", "ups-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: "switchboard-bus-out",
+        targetHandle: UPS_HANDLE_ID.INPUT
+      }),
+      breakerEdge("ups-output", "ups-a", "swbd-downstream", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-in"
+      })
+    ];
+    const { powerStateByNodeId, edgePowerStateByEdgeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["swbd-upstream"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(edgePowerStateByEdgeId["ups-input"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+    expect(edgePowerStateByEdgeId["ups-output"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+  });
+
+  it("passes upstream source ids through a UPS in normal mode and preserves phase conflict", () => {
+    const nodes = [
+      generatorNode("gen-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      generatorNode("gen-b", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      switchboardNode("swbd-upstream"),
+      upsNode("ups-a", { operatingMode: UPS_OPERATING_MODE.NORMAL }),
+      switchboardNode("swbd-downstream")
+    ];
+    const edges = [
+      breakerEdge("left-feed", "gen-a", "swbd-upstream", BREAKER_STATE.CLOSED),
+      breakerEdge("right-feed", "gen-b", "swbd-upstream", BREAKER_STATE.CLOSED),
+      breakerEdge("ups-input", "swbd-upstream", "ups-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: "switchboard-bus-out",
+        targetHandle: UPS_HANDLE_ID.INPUT
+      }),
+      breakerEdge("ups-output", "ups-a", "swbd-downstream", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-in"
+      })
+    ];
+    const {
+      powerStateByNodeId,
+      sourceIdsByNodeId,
+      edgePowerStateByEdgeId
+    } = evaluatePowerFlow(nodes, edges);
+
+    expect(sourceIdsByNodeId["ups-a"]).toEqual(["gen-a", "gen-b"]);
+    expect(sourceIdsByNodeId["swbd-downstream"]).toEqual(["gen-a", "gen-b"]);
+    expect(powerStateByNodeId["ups-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(powerStateByNodeId["swbd-downstream"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+    expect(edgePowerStateByEdgeId["ups-output"]).toBe(EDGE_POWER_STATE.PHASE_CONFLICT);
+  });
+
+  it("uses UPS ids as battery-mode source ids and allows synchronized UPS paralleling", () => {
+    const nodes = [
+      upsNode("ups-a", {
+        operatingMode: UPS_OPERATING_MODE.BATTERY,
+        syncGroup: "UPS-BUS"
+      }),
+      upsNode("ups-b", {
+        operatingMode: UPS_OPERATING_MODE.BATTERY,
+        syncGroup: " ups-bus "
+      }),
+      switchboardNode("swbd-a")
+    ];
+    const edges = [
+      breakerEdge("ups-a-feed", "ups-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-in"
+      }),
+      breakerEdge("ups-b-feed", "ups-b", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-bottom-in"
+      })
+    ];
+    const { powerStateByNodeId, sourceIdsByNodeId, faultedEdgeIds } = evaluatePowerFlow(
+      nodes,
+      edges
+    );
+
+    expect(sourceIdsByNodeId["ups-a"]).toEqual(["ups-a", "ups-b"]);
+    expect(sourceIdsByNodeId["ups-b"]).toEqual(["ups-a", "ups-b"]);
+    expect(sourceIdsByNodeId["swbd-a"]).toEqual(["ups-a", "ups-b"]);
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(faultedEdgeIds).toEqual([]);
+  });
+
+  it("flags a voltage fault on wrong-voltage UPS input and blocks the output", () => {
+    const nodes = [
+      generatorNode("gen-a"),
+      upsNode("ups-a"),
+      switchboardNode("swbd-a")
+    ];
+    const edges = [
+      breakerEdge("ups-input", "gen-a", "ups-a", BREAKER_STATE.CLOSED, {
+        targetHandle: UPS_HANDLE_ID.INPUT
+      }),
+      breakerEdge("ups-output", "ups-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-in"
+      })
+    ];
+    const { powerStateByNodeId, edgePowerStateByEdgeId, sourceIdsByNodeId } =
+      evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["ups-a"]).toBe(NODE_POWER_STATE.VOLTAGE_FAULT);
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.DEAD);
+    expect(sourceIdsByNodeId["swbd-a"]).toEqual([]);
+    expect(edgePowerStateByEdgeId["ups-input"]).toBe(EDGE_POWER_STATE.ENERGIZED);
+    expect(edgePowerStateByEdgeId["ups-output"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
+  });
+
   it("flags phase conflict when utility and generator are cross-tied", () => {
     const nodes = [
       utilityNode("utility-a"),
@@ -1336,6 +1564,24 @@ describe("createTopologyKey", () => {
     expect(keyPrimary).not.toBe(keyEmergency);
   });
 
+  it("changes when a UPS operating mode changes", () => {
+    const nodesNormal = [upsNode("ups-a", { operatingMode: UPS_OPERATING_MODE.NORMAL })];
+    const nodesBattery = [upsNode("ups-a", { operatingMode: UPS_OPERATING_MODE.BATTERY })];
+    const keyNormal = createTopologyKey(nodesNormal, []);
+    const keyBattery = createTopologyKey(nodesBattery, []);
+
+    expect(keyNormal).not.toBe(keyBattery);
+  });
+
+  it("changes when UPS battery availability changes", () => {
+    const nodesBatteryReady = [upsNode("ups-a", { batteryAvailable: true })];
+    const nodesBatteryDown = [upsNode("ups-a", { batteryAvailable: false })];
+    const keyBatteryReady = createTopologyKey(nodesBatteryReady, []);
+    const keyBatteryDown = createTopologyKey(nodesBatteryDown, []);
+
+    expect(keyBatteryReady).not.toBe(keyBatteryDown);
+  });
+
   it("changes when an edge handle changes", () => {
     const nodes = [
       utilityNode("utility-a"),
@@ -1357,6 +1603,26 @@ describe("createTopologyKey", () => {
     const keyEmergency = createTopologyKey(nodes, edgesEmergency);
 
     expect(keyPrimary).not.toBe(keyEmergency);
+  });
+
+  it("changes when UPS output lands on a different switchboard bus handle", () => {
+    const nodes = [upsNode("ups-a"), switchboardNode("swbd-a")];
+    const topLandingEdges = [
+      breakerEdge("e1", "ups-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-in"
+      })
+    ];
+    const bottomLandingEdges = [
+      breakerEdge("e1", "ups-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-bottom-in"
+      })
+    ];
+    const topLandingKey = createTopologyKey(nodes, topLandingEdges);
+    const bottomLandingKey = createTopologyKey(nodes, bottomLandingEdges);
+
+    expect(topLandingKey).not.toBe(bottomLandingKey);
   });
 
   it("changes when an edge type changes from breaker to standard", () => {

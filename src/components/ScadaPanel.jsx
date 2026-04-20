@@ -1,6 +1,11 @@
 import { useMemo } from "react";
 import { BREAKER_STATE, NODE_POWER_STATE } from "../engine/powerFlow";
 import { isSourceNodeType, normalizeNodeData } from "../nodes/nodeData";
+import {
+  formatUpsOperatingMode,
+  isUpsNodeType,
+  UPS_OPERATING_MODE
+} from "../topology/ups";
 
 const SOURCE_TYPE_LABEL = {
   utility: "UTILITY",
@@ -40,6 +45,7 @@ function ScadaPanel({
   edges,
   powerStateByNodeId,
   onToggleSourceOnline,
+  onChangeUpsOperatingMode,
   onResetAllBreakers,
   hasMopBaseSnapshot,
   isRecordingMop,
@@ -79,6 +85,33 @@ function ScadaPanel({
     [nodes, powerStateByNodeId]
   );
 
+  const upsRows = useMemo(
+    () =>
+      nodes
+        .filter((node) => isUpsNodeType(node.type))
+        .map((node) => {
+          const nodeData = normalizeNodeData(node);
+
+          return {
+            id: node.id,
+            label: nodeData.label,
+            operatingMode: nodeData.operatingMode,
+            batteryAvailable: nodeData.batteryAvailable !== false,
+            powerState: powerStateByNodeId[node.id] ?? NODE_POWER_STATE.DEAD
+          };
+        })
+        .sort((upsA, upsB) => {
+          const labelSort = upsA.label.localeCompare(upsB.label);
+
+          if (labelSort !== 0) {
+            return labelSort;
+          }
+
+          return upsA.id.localeCompare(upsB.id);
+        }),
+    [nodes, powerStateByNodeId]
+  );
+
   const trippedBreakerCount = useMemo(
     () =>
       edges.reduce(
@@ -114,10 +147,97 @@ function ScadaPanel({
             <div className="mt-1 text-base text-slate-100">{sourceRows.length}</div>
           </div>
           <div className="rounded border border-slate-700 bg-slate-950 px-2 py-2">
-            <div className="text-slate-500">Tripped</div>
-            <div className="mt-1 text-base text-red-200">{trippedBreakerCount}</div>
+            <div className="text-slate-500">UPS</div>
+            <div className="mt-1 text-base text-cyan-100">{upsRows.length}</div>
           </div>
         </div>
+      </div>
+
+      <div className="mt-3 rounded border border-slate-700 bg-slate-900">
+        <div className="border-b border-slate-700 bg-slate-950/95 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">
+            UPS Lineup
+          </div>
+        </div>
+        {upsRows.length === 0 ? (
+          <div className="px-3 py-4 text-xs text-slate-500">
+            No UPS systems are deployed on the yard.
+          </div>
+        ) : (
+          <div className="max-h-56 overflow-y-auto px-3 py-2">
+            <div className="space-y-2">
+              {upsRows.map((upsRow) => (
+                <div
+                  key={upsRow.id}
+                  className="rounded border border-slate-800 bg-slate-950/80 px-3 py-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs text-slate-100">{upsRow.label}</div>
+                      <div className="mt-1 truncate text-[10px] text-slate-500">{upsRow.id}</div>
+                    </div>
+                    <div
+                      className={`inline-flex rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getPowerStateBadgeClassName(
+                        upsRow.powerState
+                      )}`}
+                    >
+                      {upsRow.powerState}
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.14em]">
+                    <div className="text-slate-500">
+                      Mode: <span className="text-slate-200">{formatUpsOperatingMode(upsRow.operatingMode)}</span>
+                    </div>
+                    <div className={upsRow.batteryAvailable ? "text-emerald-300" : "text-rose-300"}>
+                      {upsRow.batteryAvailable ? "Battery Ready" : "Battery Unavailable"}
+                    </div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChangeUpsOperatingMode?.(upsRow.id, UPS_OPERATING_MODE.NORMAL);
+                      }}
+                      className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${
+                        upsRow.operatingMode === UPS_OPERATING_MODE.NORMAL
+                          ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
+                          : "border-slate-700 bg-slate-900 text-slate-300"
+                      }`}
+                    >
+                      Normal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChangeUpsOperatingMode?.(upsRow.id, UPS_OPERATING_MODE.BATTERY);
+                      }}
+                      className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${
+                        upsRow.operatingMode === UPS_OPERATING_MODE.BATTERY
+                          ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
+                          : "border-slate-700 bg-slate-900 text-slate-300"
+                      }`}
+                    >
+                      Battery
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChangeUpsOperatingMode?.(upsRow.id, UPS_OPERATING_MODE.BYPASS);
+                      }}
+                      className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${
+                        upsRow.operatingMode === UPS_OPERATING_MODE.BYPASS
+                          ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
+                          : "border-slate-700 bg-slate-900 text-slate-300"
+                      }`}
+                    >
+                      Bypass
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 rounded border border-slate-700 bg-slate-900 p-2">
@@ -230,6 +350,9 @@ function ScadaPanel({
         >
           Reset All Breakers
         </button>
+        <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+          Tripped breakers: {trippedBreakerCount}
+        </div>
       </div>
 
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded border border-slate-700 bg-slate-900">

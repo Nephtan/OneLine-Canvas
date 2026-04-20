@@ -19,6 +19,15 @@ import {
   getTransformerSideForEdge,
   isTransformerNodeType
 } from "../topology/transformer";
+import {
+  getUpsHandleRoleForEdge,
+  isUpsNodeType,
+  normalizeUpsOperatingMode,
+  normalizeUpsSourceHandle,
+  normalizeUpsTargetHandle,
+  UPS_HANDLE_ID,
+  UPS_OPERATING_MODE
+} from "../topology/ups";
 
 export const BREAKER_STATE = {
   OPEN: "open",
@@ -44,6 +53,14 @@ function isRootSourceType(nodeType) {
   return nodeType === "utility" || nodeType === "generator";
 }
 
+function isUpsBatterySource(node) {
+  return (
+    isUpsNodeType(node?.type) &&
+    normalizeUpsOperatingMode(node?.data?.operatingMode) === UPS_OPERATING_MODE.BATTERY &&
+    node?.data?.batteryAvailable !== false
+  );
+}
+
 function getNodeNominalVoltage(node) {
   return normalizeVoltageValue(node?.data?.nominalVoltage, 0);
 }
@@ -64,6 +81,14 @@ function getTransferSwitchHandleIdForEdge(edge, nodeId) {
   return typeof edge.sourceHandle === "string" && edge.sourceHandle.trim() !== ""
     ? edge.sourceHandle
     : TRANSFER_SWITCH_HANDLE_ID.OUTPUT;
+}
+
+function getUpsHandleIdForEdge(edge, nodeId) {
+  if (edge.target === nodeId) {
+    return normalizeUpsTargetHandle(edge.targetHandle);
+  }
+
+  return normalizeUpsSourceHandle(edge.sourceHandle);
 }
 
 function transferSwitchConductsHandle(node, handleId) {
@@ -233,11 +258,19 @@ function getNeighborIdForEdge(edge, nodeId) {
 }
 
 function getArrivalSideForNeighbor(edge, neighborNode) {
-  if (!neighborNode || !isTransformerNodeType(neighborNode.type)) {
+  if (!neighborNode) {
     return null;
   }
 
-  return getTransformerSideForEdge(edge, neighborNode.id);
+  if (isTransformerNodeType(neighborNode.type)) {
+    return getTransformerSideForEdge(edge, neighborNode.id);
+  }
+
+  if (isUpsNodeType(neighborNode.type)) {
+    return getUpsHandleIdForEdge(edge, neighborNode.id);
+  }
+
+  return null;
 }
 
 function getTransformerOutgoingTransmissions(node, arrivalSide, voltage) {
@@ -275,6 +308,45 @@ function getTransformerOutgoingTransmissions(node, arrivalSide, voltage) {
   }
 
   return [];
+}
+
+function shouldRecordArrivalForUps(node, arrivalSide) {
+  const operatingMode = normalizeUpsOperatingMode(node?.data?.operatingMode);
+
+  if (operatingMode === UPS_OPERATING_MODE.BATTERY) {
+    return arrivalSide === UPS_HANDLE_ID.OUTPUT;
+  }
+
+  return arrivalSide === UPS_HANDLE_ID.INPUT;
+}
+
+function getUpsOutgoingTransmissions(node, arrivalSide, voltage) {
+  const operatingMode = normalizeUpsOperatingMode(node?.data?.operatingMode);
+  const nominalVoltage = getNodeNominalVoltage(node);
+
+  if (operatingMode === UPS_OPERATING_MODE.BATTERY) {
+    if (arrivalSide !== UPS_HANDLE_ID.OUTPUT) {
+      return [];
+    }
+
+    return [
+      {
+        outgoingHandleRoles: [UPS_HANDLE_ID.OUTPUT],
+        outgoingVoltage: voltage
+      }
+    ];
+  }
+
+  if (arrivalSide !== UPS_HANDLE_ID.INPUT || voltage !== nominalVoltage) {
+    return [];
+  }
+
+  return [
+    {
+      outgoingHandleRoles: [UPS_HANDLE_ID.OUTPUT],
+      outgoingVoltage: voltage
+    }
+  ];
 }
 
 function recordArrivalVoltage(arrivalBucketsByNodeId, nodeId, arrivalSide, voltage) {
@@ -319,18 +391,27 @@ function setHasVoltageFaultForNode(node, arrivalBuckets, nodeVoltageSet) {
 }
 
 export function createTopologyKey(nodes, edges) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const nodeSignature = nodes
     .map((node) => {
       const sourceOnlineSignature =
         isRootSourceType(node.type) ? (isRootSourceOnline(node) ? "1" : "0") : "-";
-      const syncGroupSignature = isRootSourceType(node.type)
+      const syncGroupSignature = isRootSourceType(node.type) || isUpsNodeType(node.type)
         ? normalizeSyncGroup(node.data?.syncGroup)
         : "-";
       const activeSourceSignature = isTransferSwitchNodeType(node.type)
         ? normalizeTransferSwitchActiveSource(node.data?.activeSource)
         : "-";
+      const upsModeSignature = isUpsNodeType(node.type)
+        ? normalizeUpsOperatingMode(node.data?.operatingMode)
+        : "-";
+      const upsBatterySignature = isUpsNodeType(node.type)
+        ? node.data?.batteryAvailable !== false
+          ? "1"
+          : "0"
+        : "-";
 
-      return `${node.id}:${node.type ?? "default"}:${sourceOnlineSignature}:${syncGroupSignature}:${activeSourceSignature}:${getNodeVoltageSignature(
+      return `${node.id}:${node.type ?? "default"}:${sourceOnlineSignature}:${syncGroupSignature}:${activeSourceSignature}:${upsModeSignature}:${upsBatterySignature}:${getNodeVoltageSignature(
         node
       )}`;
     })
@@ -339,14 +420,21 @@ export function createTopologyKey(nodes, edges) {
   const edgeSignature = edges
     .map((edge) => {
       const edgeType = normalizeCanvasEdgeType(edge.type);
+      const sourceNode = nodeById.get(edge.source);
+      const targetNode = nodeById.get(edge.target);
       const breakerState =
         edgeType === EDGE_TYPE.BREAKER
           ? normalizeBreakerState(edge.data?.breakerState)
           : "-";
-      const sourceHandleSignature =
-        typeof edge.sourceHandle === "string" ? edge.sourceHandle : "";
+      const sourceHandleSignature = isUpsNodeType(sourceNode?.type)
+        ? normalizeUpsSourceHandle(edge.sourceHandle)
+        : typeof edge.sourceHandle === "string"
+          ? edge.sourceHandle
+          : "";
       const targetHandleSignature =
-        typeof edge.targetHandle === "string"
+        isUpsNodeType(targetNode?.type)
+          ? normalizeUpsTargetHandle(edge.targetHandle)
+          : typeof edge.targetHandle === "string"
           ? edge.targetHandle === TRANSFER_SWITCH_HANDLE_ID.LEGACY_INPUT
             ? TRANSFER_SWITCH_HANDLE_ID.PRIMARY
             : edge.targetHandle
@@ -416,9 +504,14 @@ export function evaluatePowerFlow(nodes, edges) {
   }
 
   nodes
-    .filter((node) => isRootSourceOnline(node))
+    .filter((node) => isRootSourceOnline(node) || isUpsBatterySource(node))
     .forEach((node) => {
-      enqueuePacket(node.id, null, node.id, getNodeNominalVoltage(node));
+      enqueuePacket(
+        node.id,
+        isUpsBatterySource(node) ? UPS_HANDLE_ID.OUTPUT : null,
+        node.id,
+        getNodeNominalVoltage(node)
+      );
     });
 
   let readIndex = 0;
@@ -433,14 +526,19 @@ export function evaluatePowerFlow(nodes, edges) {
       continue;
     }
 
-    sourceSetsByNodeId.get(packet.nodeId).add(packet.sourceId);
-    voltageSetsByNodeId.get(packet.nodeId).add(packet.voltage);
-    recordArrivalVoltage(
-      arrivalBucketsByNodeId,
-      packet.nodeId,
-      packet.arrivalSide,
-      packet.voltage
-    );
+    if (
+      !isUpsNodeType(currentNode.type) ||
+      shouldRecordArrivalForUps(currentNode, packet.arrivalSide)
+    ) {
+      sourceSetsByNodeId.get(packet.nodeId).add(packet.sourceId);
+      voltageSetsByNodeId.get(packet.nodeId).add(packet.voltage);
+      recordArrivalVoltage(
+        arrivalBucketsByNodeId,
+        packet.nodeId,
+        packet.arrivalSide,
+        packet.voltage
+      );
+    }
 
     const incidentEdges = incidentEdgesByNodeId.get(packet.nodeId);
 
@@ -469,6 +567,41 @@ export function evaluatePowerFlow(nodes, edges) {
           if (
             !outgoingTransmission.outgoingHandleRoles.includes(edgeHandleRole)
           ) {
+            continue;
+          }
+
+          const neighborId = getNeighborIdForEdge(edge, packet.nodeId);
+          const neighborNode = nodeById.get(neighborId);
+
+          edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
+          enqueuePacket(
+            neighborId,
+            getArrivalSideForNeighbor(edge, neighborNode),
+            packet.sourceId,
+            outgoingTransmission.outgoingVoltage
+          );
+        }
+      }
+
+      continue;
+    }
+
+    if (isUpsNodeType(currentNode.type)) {
+      const outgoingTransmissions = getUpsOutgoingTransmissions(
+        currentNode,
+        packet.arrivalSide,
+        packet.voltage
+      );
+
+      if (outgoingTransmissions.length === 0) {
+        continue;
+      }
+
+      for (const outgoingTransmission of outgoingTransmissions) {
+        for (const edge of incidentEdges) {
+          const edgeHandleRole = getUpsHandleRoleForEdge(edge, packet.nodeId);
+
+          if (!outgoingTransmission.outgoingHandleRoles.includes(edgeHandleRole)) {
             continue;
           }
 
