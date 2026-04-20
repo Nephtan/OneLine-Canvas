@@ -1,0 +1,1435 @@
+{
+  "nodes": [
+    {
+      "id": "utility-ea9a60d7-07d3-4efe-9758-e72f77f87752",
+      "type": "utility",
+      "position": {
+        "x": -72,
+        "y": 168
+      },
+      "data": {
+        "label": "MV CIRCUIT A2",
+        "nominalVoltage": 34500,
+        "isSourceOnline": true,
+        "syncGroup": ""
+      },
+      "measured": {
+        "width": 240,
+        "height": 260
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "mvsg-7a7c2247-4f76-4b03-b7f4-cc8da17cd8ad",
+      "type": "mvsg",
+      "position": {
+        "x": 96,
+        "y": 552
+      },
+      "data": {
+        "label": "CH3-MVS-N1",
+        "nominalVoltage": 34500
+      },
+      "measured": {
+        "width": 240,
+        "height": 192
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-64e601e2-af51-473f-ba72-8a29f56ca5ca",
+      "type": "ptx",
+      "position": {
+        "x": -48,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-301A",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-26857ed2-0ca4-4bda-ab2b-72dacb65c4ab",
+      "type": "ptx",
+      "position": {
+        "x": 384,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-301B",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-09eb2d04-b734-4214-926f-1ec0e60f6f39",
+      "type": "ptx",
+      "position": {
+        "x": 816,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-301C",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-858b4170-a1f8-454f-980e-92864f64c8a8",
+      "type": "ptx",
+      "position": {
+        "x": 1248,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-301D",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-c39020b5-f601-4425-8897-ab5ab1cb4b2b",
+      "type": "ptx",
+      "position": {
+        "x": 1680,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-301E",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "utility-5217b8ea-fd19-4e2e-b43b-655143974251",
+      "type": "utility",
+      "position": {
+        "x": 2088,
+        "y": 264
+      },
+      "data": {
+        "label": "MV CIRCUIT C3",
+        "nominalVoltage": 34500,
+        "isSourceOnline": true,
+        "syncGroup": ""
+      },
+      "measured": {
+        "width": 240,
+        "height": 260
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "mvsg-2148d03f-8e39-426e-8c31-09e8910e8c75",
+      "type": "mvsg",
+      "position": {
+        "x": 1944,
+        "y": 648
+      },
+      "data": {
+        "label": "CH3-MVS-A1",
+        "nominalVoltage": 34500
+      },
+      "measured": {
+        "width": 240,
+        "height": 192
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "mvsg-3b7d0e36-7e1f-4e33-bbbe-fd3dbc7f5f8b",
+      "type": "mvsg",
+      "position": {
+        "x": 2256,
+        "y": 648
+      },
+      "data": {
+        "label": "CH3-MVS-A2",
+        "nominalVoltage": 34500
+      },
+      "measured": {
+        "width": 240,
+        "height": 192
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-891ec419-b79d-4e28-9a45-dfdac6a4b7f2",
+      "type": "ptx",
+      "position": {
+        "x": 2472,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-202A",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-584f9e9f-17ab-4c45-bd48-250a00dd2c1c",
+      "type": "ptx",
+      "position": {
+        "x": 2904,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-202B",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-5283bd50-8906-4861-b7ae-4a6c3c198bdb",
+      "type": "ptx",
+      "position": {
+        "x": 3336,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-202C",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-50d24a70-97b2-4205-959a-c8712140b3b7",
+      "type": "ptx",
+      "position": {
+        "x": 3768,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-202D",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-20eff76d-8800-4f8c-be7f-f33e4ca8b9a2",
+      "type": "ptx",
+      "position": {
+        "x": 4200,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-202E",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-14915519-3cfe-46ed-ae41-ee79b70912c7",
+      "type": "ptx",
+      "position": {
+        "x": 4632,
+        "y": 936
+      },
+      "data": {
+        "label": "CH3-PTX-H01",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "utility-d4ca33b3-4c56-4711-b9a2-f0229f758815",
+      "type": "utility",
+      "position": {
+        "x": 5064,
+        "y": 264
+      },
+      "data": {
+        "label": "MV CIRCUIT D2",
+        "nominalVoltage": 34500,
+        "isSourceOnline": true,
+        "syncGroup": ""
+      },
+      "measured": {
+        "width": 240,
+        "height": 260
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "mvsg-4ba161e6-72ec-40ad-a4b0-5b8a676dfa7a",
+      "type": "mvsg",
+      "position": {
+        "x": 4920,
+        "y": 648
+      },
+      "data": {
+        "label": "CH3-MVS-N2",
+        "nominalVoltage": 34500
+      },
+      "measured": {
+        "width": 240,
+        "height": 192
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-859aacbd-eb2d-421f-8b0c-959cfd671f97",
+      "type": "ptx",
+      "position": {
+        "x": -264,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-201A",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-6d33021e-7eb0-4773-b315-0a24155ef48f",
+      "type": "ptx",
+      "position": {
+        "x": 168,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-201B",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-eebee7fa-4061-49fe-8fb9-0127ff087578",
+      "type": "ptx",
+      "position": {
+        "x": 600,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-201C",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-74652bfc-d7c5-416e-994e-b0da2b8d909c",
+      "type": "ptx",
+      "position": {
+        "x": 1032,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-201D",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-6b0bf1a7-3450-448f-9362-20fb64d1d486",
+      "type": "ptx",
+      "position": {
+        "x": 1464,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-201E",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-1d78e11f-0df9-4c6e-8070-27198c63fda3",
+      "type": "ptx",
+      "position": {
+        "x": 2688,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-302A",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-22f85397-4905-4cbb-98d6-b95fceb3c051",
+      "type": "ptx",
+      "position": {
+        "x": 3120,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-302B",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-7367a382-d6e3-4ed5-a758-c0ffa1955018",
+      "type": "ptx",
+      "position": {
+        "x": 3552,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-302C",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-dbbd9af2-3c12-4820-890c-d6632c424f57",
+      "type": "ptx",
+      "position": {
+        "x": 3984,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-302D",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ptx-24c83637-00d8-417c-b37f-3ca969f2fb56",
+      "type": "ptx",
+      "position": {
+        "x": 4416,
+        "y": 1368
+      },
+      "data": {
+        "label": "CH3-PTX-302E",
+        "primaryVoltage": 34500,
+        "secondaryVoltage": 480
+      },
+      "measured": {
+        "width": 288,
+        "height": 288
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "switchboard-212556df-f34e-4050-905f-7d5c3631ff41",
+      "type": "switchboard",
+      "position": {
+        "x": 1464,
+        "y": 2976
+      },
+      "data": {
+        "label": "CH3-MSB-301E",
+        "nominalVoltage": 480,
+        "boardClass": "Main Switchboard"
+      },
+      "measured": {
+        "width": 240,
+        "height": 196
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "transferSwitch-9fe1d03f-95ee-46ba-be91-b9551af7b8fb",
+      "type": "transferSwitch",
+      "position": {
+        "x": 1440,
+        "y": 2568
+      },
+      "data": {
+        "label": "CH3-MSB-301E-ATC",
+        "nominalVoltage": 480,
+        "switchClass": "Automatic Transfer Controller",
+        "activeSource": "primary"
+      },
+      "measured": {
+        "width": 288,
+        "height": 350
+      },
+      "selected": false
+    },
+    {
+      "id": "generator-46e5a10c-fa35-4db6-a9d5-e79c60f4c75f",
+      "type": "generator",
+      "position": {
+        "x": 1536,
+        "y": 2160
+      },
+      "data": {
+        "label": "CH3-GEN-301E",
+        "nominalVoltage": 480,
+        "isSourceOnline": true,
+        "syncGroup": ""
+      },
+      "measured": {
+        "width": 240,
+        "height": 260
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ups-f763a976-325e-49a3-a9a9-d84cf4bca3ec",
+      "type": "ups",
+      "position": {
+        "x": 1824,
+        "y": 2832
+      },
+      "data": {
+        "label": "CH3-UPS-301E-2",
+        "nominalVoltage": 480,
+        "upsClass": "Double Conversion UPS",
+        "batteryAvailable": true,
+        "operatingMode": "normal",
+        "syncGroup": ""
+      },
+      "measured": {
+        "width": 288,
+        "height": 406
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ups-9de0a5a6-0a7b-49d8-96ad-2466644dd9fa",
+      "type": "ups",
+      "position": {
+        "x": 1056,
+        "y": 2832
+      },
+      "data": {
+        "label": "CH3-UPS-301E-1",
+        "nominalVoltage": 480,
+        "upsClass": "Double Conversion UPS",
+        "batteryAvailable": true,
+        "operatingMode": "normal",
+        "syncGroup": ""
+      },
+      "measured": {
+        "width": 288,
+        "height": 406
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "mechanical-efc7b995-6d6c-49c6-9e33-c27245231962",
+      "type": "mechanical",
+      "position": {
+        "x": 1080,
+        "y": 3432
+      },
+      "data": {
+        "label": "CH3-ERU-301E",
+        "nominalVoltage": 480,
+        "mechanicalClass": "Electric Room Air Handler"
+      },
+      "measured": {
+        "width": 240,
+        "height": 192
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "switchboard-70fd82e6-6081-4b5d-9e50-023ec276dc8e",
+      "type": "switchboard",
+      "position": {
+        "x": 1848,
+        "y": 3432
+      },
+      "data": {
+        "label": "CH3-DP-301E-3",
+        "nominalVoltage": 480,
+        "boardClass": "Main Distribution Board"
+      },
+      "measured": {
+        "width": 240,
+        "height": 196
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6c",
+      "type": "switchboard",
+      "position": {
+        "x": 168,
+        "y": 2976
+      },
+      "data": {
+        "label": "CH3-MSB-301D",
+        "nominalVoltage": 480,
+        "boardClass": "Main Switchboard"
+      },
+      "measured": {
+        "width": 240,
+        "height": 196
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "transferSwitch-dc2ab693-7cd1-4a95-bf7b-63e24a5370bb",
+      "type": "transferSwitch",
+      "position": {
+        "x": 144,
+        "y": 2568
+      },
+      "data": {
+        "label": "CH3-MSB-301D-ATC",
+        "nominalVoltage": 480,
+        "switchClass": "Automatic Transfer Controller",
+        "activeSource": "primary"
+      },
+      "measured": {
+        "width": 288,
+        "height": 350
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "generator-ed8c3341-cbdf-455c-8b0d-33697a4694eb",
+      "type": "generator",
+      "position": {
+        "x": 240,
+        "y": 2160
+      },
+      "data": {
+        "label": "CH3-GEN-301D",
+        "nominalVoltage": 480,
+        "isSourceOnline": true,
+        "syncGroup": ""
+      },
+      "measured": {
+        "width": 240,
+        "height": 260
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ups-1344ebaa-a614-4210-9921-4ee9803fbf0d",
+      "type": "ups",
+      "position": {
+        "x": 528,
+        "y": 2832
+      },
+      "data": {
+        "label": "CH3-UPS-301D-2",
+        "nominalVoltage": 480,
+        "upsClass": "Double Conversion UPS",
+        "batteryAvailable": true,
+        "operatingMode": "normal",
+        "syncGroup": ""
+      },
+      "measured": {
+        "width": 288,
+        "height": 406
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "ups-abd8ff56-1d58-4f6a-b8f1-307cba6a0b5a",
+      "type": "ups",
+      "position": {
+        "x": -240,
+        "y": 2832
+      },
+      "data": {
+        "label": "CH3-UPS-301D-1",
+        "nominalVoltage": 480,
+        "upsClass": "Double Conversion UPS",
+        "batteryAvailable": true,
+        "operatingMode": "normal",
+        "syncGroup": ""
+      },
+      "measured": {
+        "width": 288,
+        "height": 406
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "mechanical-449e7deb-8d14-430a-9854-c5bac5861282",
+      "type": "mechanical",
+      "position": {
+        "x": -216,
+        "y": 3432
+      },
+      "data": {
+        "label": "CH3-ERU-301D",
+        "nominalVoltage": 480,
+        "mechanicalClass": "Electric Room Air Handler"
+      },
+      "measured": {
+        "width": 240,
+        "height": 192
+      },
+      "selected": false,
+      "dragging": false
+    },
+    {
+      "id": "switchboard-fd1234d1-c92c-45a2-b9dd-35d36dde75eb",
+      "type": "switchboard",
+      "position": {
+        "x": 552,
+        "y": 3432
+      },
+      "data": {
+        "label": "CH3-DP-301D-3",
+        "nominalVoltage": 480,
+        "boardClass": "Main Distribution Board"
+      },
+      "measured": {
+        "width": 240,
+        "height": 196
+      },
+      "selected": false,
+      "dragging": false
+    }
+  ],
+  "edges": [
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "utility-ea9a60d7-07d3-4efe-9758-e72f77f87752",
+      "sourceHandle": "utility-bus-out",
+      "target": "mvsg-7a7c2247-4f76-4b03-b7f4-cc8da17cd8ad",
+      "targetHandle": "mvsg-bus-in",
+      "id": "xy-edge__utility-ea9a60d7-07d3-4efe-9758-e72f77f87752utility-bus-out-mvsg-7a7c2247-4f76-4b03-b7f4-cc8da17cd8admvsg-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed",
+        "powerState": "energized"
+      },
+      "source": "mvsg-7a7c2247-4f76-4b03-b7f4-cc8da17cd8ad",
+      "sourceHandle": "mvsg-bus-out",
+      "target": "ptx-64e601e2-af51-473f-ba72-8a29f56ca5ca",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__mvsg-7a7c2247-4f76-4b03-b7f4-cc8da17cd8admvsg-bus-out-ptx-64e601e2-af51-473f-ba72-8a29f56ca5captx-bus-in",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 120,
+        "centerY": 840
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-64e601e2-af51-473f-ba72-8a29f56ca5ca",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-26857ed2-0ca4-4bda-ab2b-72dacb65c4ab",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-64e601e2-af51-473f-ba72-8a29f56ca5captx-bus-loop-ptx-26857ed2-0ca4-4bda-ab2b-72dacb65c4abptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-09eb2d04-b734-4214-926f-1ec0e60f6f39",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-858b4170-a1f8-454f-980e-92864f64c8a8",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-09eb2d04-b734-4214-926f-1ec0e60f6f39ptx-bus-loop-ptx-858b4170-a1f8-454f-980e-92864f64c8a8ptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-26857ed2-0ca4-4bda-ab2b-72dacb65c4ab",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-09eb2d04-b734-4214-926f-1ec0e60f6f39",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-26857ed2-0ca4-4bda-ab2b-72dacb65c4abptx-bus-loop-ptx-09eb2d04-b734-4214-926f-1ec0e60f6f39ptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "utility-5217b8ea-fd19-4e2e-b43b-655143974251",
+      "sourceHandle": "utility-bus-out",
+      "target": "mvsg-2148d03f-8e39-426e-8c31-09e8910e8c75",
+      "targetHandle": "mvsg-bus-in",
+      "id": "xy-edge__utility-5217b8ea-fd19-4e2e-b43b-655143974251utility-bus-out-mvsg-2148d03f-8e39-426e-8c31-09e8910e8c75mvsg-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "open"
+      },
+      "source": "mvsg-2148d03f-8e39-426e-8c31-09e8910e8c75",
+      "sourceHandle": "mvsg-bus-out",
+      "target": "ptx-c39020b5-f601-4425-8897-ab5ab1cb4b2b",
+      "targetHandle": "ptx-bus-loop-target",
+      "id": "xy-edge__mvsg-2148d03f-8e39-426e-8c31-09e8910e8c75mvsg-bus-out-ptx-c39020b5-f601-4425-8897-ab5ab1cb4b2bptx-bus-loop-target",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-c39020b5-f601-4425-8897-ab5ab1cb4b2b",
+      "sourceHandle": "ptx-bus-in-source",
+      "target": "ptx-858b4170-a1f8-454f-980e-92864f64c8a8",
+      "targetHandle": "ptx-bus-loop-target",
+      "id": "xy-edge__ptx-c39020b5-f601-4425-8897-ab5ab1cb4b2bptx-bus-in-source-ptx-858b4170-a1f8-454f-980e-92864f64c8a8ptx-bus-loop-target",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "utility-5217b8ea-fd19-4e2e-b43b-655143974251",
+      "sourceHandle": "utility-bus-out",
+      "target": "mvsg-3b7d0e36-7e1f-4e33-bbbe-fd3dbc7f5f8b",
+      "targetHandle": "mvsg-bus-in",
+      "id": "xy-edge__utility-5217b8ea-fd19-4e2e-b43b-655143974251utility-bus-out-mvsg-3b7d0e36-7e1f-4e33-bbbe-fd3dbc7f5f8bmvsg-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "open",
+        "powerState": "de-energized"
+      },
+      "source": "mvsg-3b7d0e36-7e1f-4e33-bbbe-fd3dbc7f5f8b",
+      "sourceHandle": "mvsg-bus-out",
+      "target": "ptx-891ec419-b79d-4e28-9a45-dfdac6a4b7f2",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__mvsg-3b7d0e36-7e1f-4e33-bbbe-fd3dbc7f5f8bmvsg-bus-out-ptx-891ec419-b79d-4e28-9a45-dfdac6a4b7f2ptx-bus-in",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 2472,
+        "centerY": 888
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-891ec419-b79d-4e28-9a45-dfdac6a4b7f2",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-584f9e9f-17ab-4c45-bd48-250a00dd2c1c",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-891ec419-b79d-4e28-9a45-dfdac6a4b7f2ptx-bus-loop-ptx-584f9e9f-17ab-4c45-bd48-250a00dd2c1cptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-584f9e9f-17ab-4c45-bd48-250a00dd2c1c",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-5283bd50-8906-4861-b7ae-4a6c3c198bdb",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-584f9e9f-17ab-4c45-bd48-250a00dd2c1cptx-bus-loop-ptx-5283bd50-8906-4861-b7ae-4a6c3c198bdbptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-5283bd50-8906-4861-b7ae-4a6c3c198bdb",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-50d24a70-97b2-4205-959a-c8712140b3b7",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-5283bd50-8906-4861-b7ae-4a6c3c198bdbptx-bus-loop-ptx-50d24a70-97b2-4205-959a-c8712140b3b7ptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-50d24a70-97b2-4205-959a-c8712140b3b7",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-20eff76d-8800-4f8c-be7f-f33e4ca8b9a2",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-50d24a70-97b2-4205-959a-c8712140b3b7ptx-bus-loop-ptx-20eff76d-8800-4f8c-be7f-f33e4ca8b9a2ptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-20eff76d-8800-4f8c-be7f-f33e4ca8b9a2",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-14915519-3cfe-46ed-ae41-ee79b70912c7",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-20eff76d-8800-4f8c-be7f-f33e4ca8b9a2ptx-bus-loop-ptx-14915519-3cfe-46ed-ae41-ee79b70912c7ptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "utility-d4ca33b3-4c56-4711-b9a2-f0229f758815",
+      "sourceHandle": "utility-bus-out",
+      "target": "mvsg-4ba161e6-72ec-40ad-a4b0-5b8a676dfa7a",
+      "targetHandle": "mvsg-bus-in",
+      "id": "xy-edge__utility-d4ca33b3-4c56-4711-b9a2-f0229f758815utility-bus-out-mvsg-4ba161e6-72ec-40ad-a4b0-5b8a676dfa7amvsg-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "mvsg-4ba161e6-72ec-40ad-a4b0-5b8a676dfa7a",
+      "sourceHandle": "mvsg-bus-out",
+      "target": "ptx-14915519-3cfe-46ed-ae41-ee79b70912c7",
+      "targetHandle": "ptx-bus-loop-target",
+      "id": "xy-edge__mvsg-4ba161e6-72ec-40ad-a4b0-5b8a676dfa7amvsg-bus-out-ptx-14915519-3cfe-46ed-ae41-ee79b70912c7ptx-bus-loop-target",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed",
+        "powerState": "energized"
+      },
+      "source": "mvsg-7a7c2247-4f76-4b03-b7f4-cc8da17cd8ad",
+      "sourceHandle": "mvsg-bus-out",
+      "target": "ptx-859aacbd-eb2d-421f-8b0c-959cfd671f97",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__mvsg-7a7c2247-4f76-4b03-b7f4-cc8da17cd8admvsg-bus-out-ptx-859aacbd-eb2d-421f-8b0c-959cfd671f97ptx-bus-in",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 120,
+        "centerY": 792
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-859aacbd-eb2d-421f-8b0c-959cfd671f97",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-6d33021e-7eb0-4773-b315-0a24155ef48f",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-859aacbd-eb2d-421f-8b0c-959cfd671f97ptx-bus-loop-ptx-6d33021e-7eb0-4773-b315-0a24155ef48fptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-6d33021e-7eb0-4773-b315-0a24155ef48f",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-eebee7fa-4061-49fe-8fb9-0127ff087578",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-6d33021e-7eb0-4773-b315-0a24155ef48fptx-bus-loop-ptx-eebee7fa-4061-49fe-8fb9-0127ff087578ptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-eebee7fa-4061-49fe-8fb9-0127ff087578",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-74652bfc-d7c5-416e-994e-b0da2b8d909c",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-eebee7fa-4061-49fe-8fb9-0127ff087578ptx-bus-loop-ptx-74652bfc-d7c5-416e-994e-b0da2b8d909cptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-74652bfc-d7c5-416e-994e-b0da2b8d909c",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-6b0bf1a7-3450-448f-9362-20fb64d1d486",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-74652bfc-d7c5-416e-994e-b0da2b8d909cptx-bus-loop-ptx-6b0bf1a7-3450-448f-9362-20fb64d1d486ptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "open",
+        "powerState": "de-energized"
+      },
+      "source": "mvsg-2148d03f-8e39-426e-8c31-09e8910e8c75",
+      "sourceHandle": "mvsg-bus-out",
+      "target": "ptx-6b0bf1a7-3450-448f-9362-20fb64d1d486",
+      "targetHandle": "ptx-bus-loop-target",
+      "id": "xy-edge__mvsg-2148d03f-8e39-426e-8c31-09e8910e8c75mvsg-bus-out-ptx-6b0bf1a7-3450-448f-9362-20fb64d1d486ptx-bus-loop-target",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 1968,
+        "centerY": 1296
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "open",
+        "powerState": "de-energized"
+      },
+      "source": "mvsg-3b7d0e36-7e1f-4e33-bbbe-fd3dbc7f5f8b",
+      "sourceHandle": "mvsg-bus-out",
+      "target": "ptx-1d78e11f-0df9-4c6e-8070-27198c63fda3",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__mvsg-3b7d0e36-7e1f-4e33-bbbe-fd3dbc7f5f8bmvsg-bus-out-ptx-1d78e11f-0df9-4c6e-8070-27198c63fda3ptx-bus-in",
+      "pathOptions": {
+        "centerX": 2472,
+        "centerY": 1296
+      },
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-1d78e11f-0df9-4c6e-8070-27198c63fda3",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-22f85397-4905-4cbb-98d6-b95fceb3c051",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-1d78e11f-0df9-4c6e-8070-27198c63fda3ptx-bus-loop-ptx-22f85397-4905-4cbb-98d6-b95fceb3c051ptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-7367a382-d6e3-4ed5-a758-c0ffa1955018",
+      "sourceHandle": "ptx-bus-in-source",
+      "target": "ptx-22f85397-4905-4cbb-98d6-b95fceb3c051",
+      "targetHandle": "ptx-bus-loop-target",
+      "id": "xy-edge__ptx-7367a382-d6e3-4ed5-a758-c0ffa1955018ptx-bus-in-source-ptx-22f85397-4905-4cbb-98d6-b95fceb3c051ptx-bus-loop-target",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-7367a382-d6e3-4ed5-a758-c0ffa1955018",
+      "sourceHandle": "ptx-bus-loop",
+      "target": "ptx-dbbd9af2-3c12-4820-890c-d6632c424f57",
+      "targetHandle": "ptx-bus-in",
+      "id": "xy-edge__ptx-7367a382-d6e3-4ed5-a758-c0ffa1955018ptx-bus-loop-ptx-dbbd9af2-3c12-4820-890c-d6632c424f57ptx-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed",
+        "powerState": "energized"
+      },
+      "source": "mvsg-4ba161e6-72ec-40ad-a4b0-5b8a676dfa7a",
+      "sourceHandle": "mvsg-bus-out",
+      "target": "ptx-24c83637-00d8-417c-b37f-3ca969f2fb56",
+      "targetHandle": "ptx-bus-loop-target",
+      "id": "xy-edge__mvsg-4ba161e6-72ec-40ad-a4b0-5b8a676dfa7amvsg-bus-out-ptx-24c83637-00d8-417c-b37f-3ca969f2fb56ptx-bus-loop-target",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 5016,
+        "centerY": 1296
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-24c83637-00d8-417c-b37f-3ca969f2fb56",
+      "sourceHandle": "ptx-bus-in-source",
+      "target": "ptx-dbbd9af2-3c12-4820-890c-d6632c424f57",
+      "targetHandle": "ptx-bus-loop-target",
+      "id": "xy-edge__ptx-24c83637-00d8-417c-b37f-3ca969f2fb56ptx-bus-in-source-ptx-dbbd9af2-3c12-4820-890c-d6632c424f57ptx-bus-loop-target",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-c39020b5-f601-4425-8897-ab5ab1cb4b2b",
+      "sourceHandle": "ptx-bus-out",
+      "target": "transferSwitch-9fe1d03f-95ee-46ba-be91-b9551af7b8fb",
+      "targetHandle": "target-primary",
+      "id": "xy-edge__ptx-c39020b5-f601-4425-8897-ab5ab1cb4b2bptx-bus-out-transferSwitch-9fe1d03f-95ee-46ba-be91-b9551af7b8fbtarget-primary",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "generator-46e5a10c-fa35-4db6-a9d5-e79c60f4c75f",
+      "sourceHandle": "generator-bus-out",
+      "target": "transferSwitch-9fe1d03f-95ee-46ba-be91-b9551af7b8fb",
+      "targetHandle": "target-emergency",
+      "id": "xy-edge__generator-46e5a10c-fa35-4db6-a9d5-e79c60f4c75fgenerator-bus-out-transferSwitch-9fe1d03f-95ee-46ba-be91-b9551af7b8fbtarget-emergency",
+      "selected": false
+    },
+    {
+      "type": "standard",
+      "data": {},
+      "source": "transferSwitch-9fe1d03f-95ee-46ba-be91-b9551af7b8fb",
+      "sourceHandle": "transfer-bus-out",
+      "target": "switchboard-212556df-f34e-4050-905f-7d5c3631ff41",
+      "targetHandle": "switchboard-bus-in",
+      "id": "xy-edge__transferSwitch-9fe1d03f-95ee-46ba-be91-b9551af7b8fbtransfer-bus-out-switchboard-212556df-f34e-4050-905f-7d5c3631ff41switchboard-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed",
+        "powerState": "de-energized"
+      },
+      "source": "ups-f763a976-325e-49a3-a9a9-d84cf4bca3ec",
+      "sourceHandle": "ups-load-out",
+      "target": "switchboard-212556df-f34e-4050-905f-7d5c3631ff41",
+      "targetHandle": "switchboard-bus-bottom-in",
+      "id": "xy-edge__ups-f763a976-325e-49a3-a9a9-d84cf4bca3ecups-load-out-switchboard-212556df-f34e-4050-905f-7d5c3631ff41switchboard-bus-bottom-in",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 1368,
+        "centerY": 3528
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "switchboard-212556df-f34e-4050-905f-7d5c3631ff41",
+      "sourceHandle": "switchboard-bus-out",
+      "target": "ups-f763a976-325e-49a3-a9a9-d84cf4bca3ec",
+      "targetHandle": "ups-line-in",
+      "id": "xy-edge__switchboard-212556df-f34e-4050-905f-7d5c3631ff41switchboard-bus-out-ups-f763a976-325e-49a3-a9a9-d84cf4bca3ecups-line-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed",
+        "powerState": "de-energized"
+      },
+      "source": "switchboard-212556df-f34e-4050-905f-7d5c3631ff41",
+      "sourceHandle": "switchboard-bus-out",
+      "target": "ups-9de0a5a6-0a7b-49d8-96ad-2466644dd9fa",
+      "targetHandle": "ups-line-in",
+      "id": "xy-edge__switchboard-212556df-f34e-4050-905f-7d5c3631ff41switchboard-bus-out-ups-9de0a5a6-0a7b-49d8-96ad-2466644dd9faups-line-in",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 1392,
+        "centerY": 3000
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed",
+        "powerState": "energized"
+      },
+      "source": "ups-9de0a5a6-0a7b-49d8-96ad-2466644dd9fa",
+      "sourceHandle": "ups-load-out",
+      "target": "switchboard-212556df-f34e-4050-905f-7d5c3631ff41",
+      "targetHandle": "switchboard-bus-bottom-in",
+      "id": "xy-edge__ups-9de0a5a6-0a7b-49d8-96ad-2466644dd9faups-load-out-switchboard-212556df-f34e-4050-905f-7d5c3631ff41switchboard-bus-bottom-in",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 1368,
+        "centerY": 3288
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "switchboard-212556df-f34e-4050-905f-7d5c3631ff41",
+      "sourceHandle": "switchboard-bus-out",
+      "target": "mechanical-efc7b995-6d6c-49c6-9e33-c27245231962",
+      "targetHandle": "mechanical-bus-in",
+      "id": "xy-edge__switchboard-212556df-f34e-4050-905f-7d5c3631ff41switchboard-bus-out-mechanical-efc7b995-6d6c-49c6-9e33-c27245231962mechanical-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "switchboard-212556df-f34e-4050-905f-7d5c3631ff41",
+      "sourceHandle": "switchboard-bus-out",
+      "target": "switchboard-70fd82e6-6081-4b5d-9e50-023ec276dc8e",
+      "targetHandle": "switchboard-bus-in",
+      "id": "xy-edge__switchboard-212556df-f34e-4050-905f-7d5c3631ff41switchboard-bus-out-switchboard-70fd82e6-6081-4b5d-9e50-023ec276dc8eswitchboard-bus-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "generator-ed8c3341-cbdf-455c-8b0d-33697a4694eb",
+      "sourceHandle": "generator-bus-out",
+      "target": "transferSwitch-dc2ab693-7cd1-4a95-bf7b-63e24a5370bb",
+      "targetHandle": "target-emergency",
+      "id": "breaker-cd4c3b87-556f-41c6-86ff-bbf71b0ada3f",
+      "selected": false
+    },
+    {
+      "type": "standard",
+      "data": {},
+      "source": "transferSwitch-dc2ab693-7cd1-4a95-bf7b-63e24a5370bb",
+      "sourceHandle": "transfer-bus-out",
+      "target": "switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6c",
+      "targetHandle": "switchboard-bus-in",
+      "id": "standard-bb04caaa-b082-4d48-82ac-6eff1ad0ec8d",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed",
+        "powerState": "de-energized"
+      },
+      "source": "ups-1344ebaa-a614-4210-9921-4ee9803fbf0d",
+      "sourceHandle": "ups-load-out",
+      "target": "switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6c",
+      "targetHandle": "switchboard-bus-bottom-in",
+      "id": "breaker-b5218aea-95e1-4bca-9ca1-2529a9642123",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 3384,
+        "centerY": 4848
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed",
+        "powerState": "energized"
+      },
+      "source": "ups-abd8ff56-1d58-4f6a-b8f1-307cba6a0b5a",
+      "sourceHandle": "ups-load-out",
+      "target": "switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6c",
+      "targetHandle": "switchboard-bus-bottom-in",
+      "id": "breaker-5b36fb3c-be83-4d25-9965-6e04900beb71",
+      "selected": false,
+      "pathOptions": {
+        "centerX": 3384,
+        "centerY": 4608
+      }
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6c",
+      "sourceHandle": "switchboard-bus-out",
+      "target": "mechanical-449e7deb-8d14-430a-9854-c5bac5861282",
+      "targetHandle": "mechanical-bus-in",
+      "id": "breaker-9b95c5e2-2a24-4af6-a683-c6650f9f45db",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6c",
+      "sourceHandle": "switchboard-bus-out",
+      "target": "switchboard-fd1234d1-c92c-45a2-b9dd-35d36dde75eb",
+      "targetHandle": "switchboard-bus-in",
+      "id": "breaker-8b719bcd-7758-434e-8fee-feff266727c9",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6c",
+      "sourceHandle": "switchboard-bus-out",
+      "target": "ups-1344ebaa-a614-4210-9921-4ee9803fbf0d",
+      "targetHandle": "ups-line-in",
+      "id": "xy-edge__switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6cswitchboard-bus-out-ups-1344ebaa-a614-4210-9921-4ee9803fbf0dups-line-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6c",
+      "sourceHandle": "switchboard-bus-out",
+      "target": "ups-abd8ff56-1d58-4f6a-b8f1-307cba6a0b5a",
+      "targetHandle": "ups-line-in",
+      "id": "xy-edge__switchboard-ab9aa3a4-3478-498f-8bf5-58c0855e7a6cswitchboard-bus-out-ups-abd8ff56-1d58-4f6a-b8f1-307cba6a0b5aups-line-in",
+      "selected": false
+    },
+    {
+      "type": "breaker",
+      "data": {
+        "breakerState": "closed"
+      },
+      "source": "ptx-858b4170-a1f8-454f-980e-92864f64c8a8",
+      "sourceHandle": "ptx-bus-out",
+      "target": "transferSwitch-dc2ab693-7cd1-4a95-bf7b-63e24a5370bb",
+      "targetHandle": "target-primary",
+      "id": "xy-edge__ptx-858b4170-a1f8-454f-980e-92864f64c8a8ptx-bus-out-transferSwitch-dc2ab693-7cd1-4a95-bf7b-63e24a5370bbtarget-primary",
+      "selected": false
+    }
+  ],
+  "mopSteps": [],
+  "mopBaseSnapshot": null
+}
