@@ -4,6 +4,7 @@ import InlineLabelEditor from "../components/InlineLabelEditor";
 import NodeDeleteButton from "../components/NodeDeleteButton";
 import NodePropertiesButton from "../components/NodePropertiesButton";
 import { formatVoltageValue } from "../electrical/voltage";
+import { getNodeShellClassName, NODE_SIZE_FAMILY } from "./nodeLayout";
 
 function WarningIcon({ className }) {
   return (
@@ -105,7 +106,9 @@ function GeneratorNode({ data }) {
     : "border border-slate-500 bg-slate-800/80 text-slate-300";
 
   return (
-    <div className={`min-w-60 rounded-md border px-4 py-3 text-left ${shellClassName}`}>
+    <div
+      className={`${getNodeShellClassName(NODE_SIZE_FAMILY.SOURCE)} rounded-md border px-4 py-3 text-left ${shellClassName}`}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="inline-flex items-center gap-1.5">
           <EngineIcon className={`h-4 w-4 ${titleClassName}`} />

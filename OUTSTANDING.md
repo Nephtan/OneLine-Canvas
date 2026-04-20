@@ -36,7 +36,8 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 - [ ] Add tests for any future protection, relay coordination, or breaker rating semantics.
 
 ## UI and Workflow Coverage
-- [ ] Add automated UI coverage for delete controls, breaker-vs-wire draw mode selection, SCADA actions, and MOP recording or playback flows.
+- [ ] Add automated UI coverage for grid snapping, manual edge midpoint routing, delete controls, breaker-vs-wire draw mode selection, SCADA actions, and MOP recording or playback flows.
+- [ ] Decide whether manual edge routing needs reset-to-auto controls, richer multi-bend editing, or obstacle-aware autorouting beyond the current single midpoint anchor.
 - [ ] Expand the new properties modal beyond voltage into current, device ratings, and richer equipment-specific electrical metadata.
 - [ ] Define how electrical metadata editing should scale across large project topologies without overloading the canvas UI.
 

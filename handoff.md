@@ -23,6 +23,7 @@
 | Feature Update | `516637d` | `2026-04-17` | `Enable PTX primary-bus daisy-chain propagation` | Committed |
 | Feature Update | `273fa4c` | `2026-04-17` | `Add dual-ended PTX primary terminals` | Committed |
 | Working Tree | `working-tree` | `2026-04-17` | `Repair PTX top-edge terminal visuals` | Implemented |
+| Working Tree | `working-tree` | `2026-04-20` | `Add grid-snapped node layout and draggable edge midpoints` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -331,6 +332,22 @@
   - PTX primary daisy-chains are still modeled as always-continuous internal buses; explicit operator-controlled S1/S2-style MV switch states are not implemented yet.
   - PTX protection remains idealized; no fuse, relay, or sectionalizing-device behavior is attached to the primary bus corridor.
 
+### Working Tree Update: Grid-Snapped Layout and Draggable Edge Midpoints
+- Revision: `working-tree`
+- Date: `2026-04-20`
+- Subject: `Add grid-snapped node layout and draggable edge midpoints`
+- Major additions:
+  - Standardized the canvas on a single `24px` snap grid that now drives the React Flow background, newly dropped node placement, and subsequent node dragging.
+  - Introduced shared node shell size families so source gear, standard gear, and complex gear now render from one deterministic footprint contract without changing any existing handle IDs or electrical interfaces.
+  - Added a shared edge-center drag control for both breaker and standard-wire renderers so operators can reroute edges from the midpoint UI and persist that bend anchor in `edge.pathOptions.centerX` / `centerY`.
+  - Extended graph normalization to sanitize optional midpoint coordinates during hydration/import so malformed saved view metadata cannot break edge rendering.
+- Engine-state evolution:
+  - None to electrical semantics. Traversal, conflict detection, voltage propagation, breaker trip behavior, and ATS gating remain unchanged.
+  - Layout-only node moves and midpoint reroutes remain excluded from `createTopologyKey(...)`, so these operator-facing canvas adjustments do not invalidate the memoized power-flow result.
+- Unresolved items at phase end:
+  - Midpoint routing currently supports one absolute snapped bend anchor per edge; there is no reset-to-auto affordance, multi-bend editing, or obstacle-aware autorouting yet.
+  - Automated UI coverage still does not exercise node snap behavior or midpoint-drag workflows.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
@@ -394,6 +411,8 @@
   - Reworked `README.md` into an accurate public repo landing page with a docs map, current-status framing, command guidance, and an explicit limitations section.
 - Dynamic canvas and equipment workflow:
   - Blank-canvas sandbox with drag-drop equipment palette, user-created edges, and deletion support.
+  - Node placement and dragging now snap to a shared `24px` canvas grid, while legacy off-grid saved layouts remain untouched until an operator moves them.
+  - Breaker and standard-wire edges now support manual midpoint rerouting through the existing center UI cluster, with view-only bend coordinates persisted separately from electrical edge state.
 - Canonical electrical metadata and editor workflow:
   - Every node now persists canonical numeric voltage metadata through create, hydrate, export/import, autosave, and MOP snapshots.
   - A node-local properties gear opens a shared industrial modal for editing `label`, `nominalVoltage`, or PTX `primaryVoltage` / `secondaryVoltage`.
@@ -470,10 +489,12 @@
 - Canvas ergonomics:
   - Node and edge deletion now flows through native React Flow `deleteElements()` so topology pruning invalidates the graph naturally without manual dangling-edge cleanup logic.
   - New user-drawn connections always carry an explicit custom edge type (`breaker` or `standard`); React Flow fallback edges are no longer part of the supported topology contract.
+  - New node drops, subsequent node drags, and manual edge midpoint reroutes all snap to the shared `24px` grid; legacy saved layouts are preserved until the operator touches them.
+  - Breaker status pills and standard-wire midpoint grab rails now double as drag handles for rerouting without interfering with breaker toggles or delete controls.
 - Recompute and memoization:
   - Topology key includes node identity/type plus root-source online signatures, normalized root sync-group signatures, and transfer-switch `activeSource`.
   - Topology key includes edge type, source/target, source-handle/target-handle IDs, and breaker state (`open`, `closed`, `tripped`) where applicable.
-  - Position-only drags and label-only renames do not invalidate traversal cache.
+  - Position-only drags, manual midpoint reroutes, and label-only renames do not invalidate traversal cache.
 
 ### Locked Behavioral Contracts for Implementers
 - Topology source of truth is always live React Flow `nodes`/`edges`; no hardcoded adjacency is permitted.
@@ -481,6 +502,7 @@
 - Valid breaker states are `open`, `closed`, and `tripped`; only `closed` is conductive.
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
 - Persistence contract is now `{ nodes, edges, mopSteps, mopBaseSnapshot }` with backward-compatible shallow import validation at the top-level graph shape.
+- Manual edge routing metadata is view-only and must stay isolated under `edge.pathOptions.centerX` / `centerY`; it must never alter conductivity, topology extraction, or breaker semantics.
 - `usePowerFlow` now returns `faultedEdgeIds` in addition to node/edge power maps.
 - Canonical voltage metadata must remain numeric in volts: standard gear uses `nominalVoltage`, while PTXs use `primaryVoltage` and `secondaryVoltage`.
 - Voltage-aware traversal packets must preserve both `sourceId` and propagated voltage all the way through memoized evaluation.
@@ -512,7 +534,7 @@
 - PTX primary daisy-chains are currently modeled as always-continuous internal buses; explicit S1/S2-style MV switch states or isolation points are not yet operator-editable.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 - `npm run check:deps` currently assumes a clean `node_modules`; Vite temp directories such as `.vite` and `.vite-temp` can trigger false-positive extraneous-package failures after normal dev/build/test activity.
-- Visual delete controls and connection draw-mode ergonomics are now present, but there is still no automated UI coverage for these operator workflows.
+- Visual delete controls, grid-snapped layout ergonomics, edge midpoint dragging, and connection draw-mode workflows are now present, but there is still no automated UI coverage for these operator paths.
 
 ## Engine Verification and Test Coverage Snapshot
 
@@ -529,6 +551,7 @@
 - Root sync-group topology-key invalidation and label-only cache stability.
 - ATS interlock behavior on both breaker and standard-wire feeders plus end-to-end chain propagation through `generator -> switchboard -> transferSwitch -> mechanical`.
 - Graph normalization coverage for numeric voltage metadata and recognizable legacy voltage-string imports.
+- Topology-key cache stability for layout-only node-position changes, label-only renames, and manual edge midpoint routing metadata.
 
 ### Current Validation Gaps
 - No engine model/tests for synchronization permissives beyond shared sync-group identity (phase-angle drift, frequency slip, or voltage windows).
@@ -536,5 +559,5 @@
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
-- No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, delete-button workflows, or the breaker vs solid-wire connection tool.
+- No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, delete-button workflows, snap-to-grid layout behavior, midpoint edge rerouting, or the breaker vs solid-wire connection tool.
 - Automated simulation test execution beyond dependency validation still depends on the current workspace toolchain remaining installed and healthy.

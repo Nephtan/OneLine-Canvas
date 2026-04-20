@@ -10,6 +10,7 @@ import {
   normalizeTransferSwitchActiveSource
 } from "../topology/transferSwitch";
 import { formatVoltageValue } from "../electrical/voltage";
+import { getNodeShellClassName, NODE_SIZE_FAMILY } from "./nodeLayout";
 
 function WarningIcon({ className }) {
   return (
@@ -143,7 +144,9 @@ function TransferSwitchNode({ data }) {
   }
 
   return (
-    <div className={`min-w-64 rounded-md border px-4 py-4 text-left ${shellClassName}`}>
+    <div
+      className={`${getNodeShellClassName(NODE_SIZE_FAMILY.COMPLEX)} rounded-md border px-4 py-4 text-left ${shellClassName}`}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="inline-flex items-center gap-2">
           <TransferIcon className={`h-4 w-4 ${titleClassName}`} />

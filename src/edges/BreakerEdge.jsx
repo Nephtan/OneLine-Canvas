@@ -1,10 +1,12 @@
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from "@xyflow/react";
+import EdgeCenterControl from "../components/EdgeCenterControl";
 import EdgeDeleteButton from "../components/EdgeDeleteButton";
 import {
   BREAKER_STATE,
   EDGE_POWER_STATE,
   normalizeBreakerState
 } from "../engine/powerFlow";
+import { getManualEdgeCenter } from "../topology/edgePathOptions";
 
 const OPEN_EDGE_STYLE = {
   stroke: "#64748b",
@@ -46,19 +48,23 @@ function BreakerEdge({
   targetY,
   sourcePosition,
   targetPosition,
-  data
+  data,
+  pathOptions
 }) {
   const breakerState = normalizeBreakerState(data?.breakerState);
   const edgePowerState = data?.powerState ?? EDGE_POWER_STATE.DE_ENERGIZED;
   const isClosed = breakerState === BREAKER_STATE.CLOSED;
   const isTripped = breakerState === BREAKER_STATE.TRIPPED;
+  const manualCenter = getManualEdgeCenter(pathOptions);
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
-    targetPosition
+    targetPosition,
+    centerX: manualCenter?.centerX,
+    centerY: manualCenter?.centerY
   });
   const edgeStyle = isTripped
     ? TRIPPED_EDGE_STYLE
@@ -101,22 +107,23 @@ function BreakerEdge({
       />
 
       <EdgeLabelRenderer>
-        <div
-          style={{ left: `${labelX}px`, top: `${labelY}px` }}
-          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-        >
-          <div className="flex items-center gap-2">
-            <div
-              className={`rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${labelClassName}`}
-            >
-              {edgeLabel}
+        <EdgeCenterControl edgeId={id} labelX={labelX} labelY={labelY}>
+          {(dragHandleProps) => (
+            <div className="flex items-center gap-2">
+              <div
+                {...dragHandleProps}
+                title={`Drag breaker ${id} route`}
+                className={`pointer-events-auto nodrag nopan cursor-grab rounded border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] active:cursor-grabbing ${labelClassName}`}
+              >
+                {edgeLabel}
+              </div>
+              <EdgeDeleteButton
+                title={`Delete breaker ${id}`}
+                onDelete={data?.onDeleteEdge}
+              />
             </div>
-            <EdgeDeleteButton
-              title={`Delete breaker ${id}`}
-              onDelete={data?.onDeleteEdge}
-            />
-          </div>
-        </div>
+          )}
+        </EdgeCenterControl>
       </EdgeLabelRenderer>
     </>
   );

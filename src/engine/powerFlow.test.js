@@ -1230,6 +1230,28 @@ describe("createTopologyKey", () => {
     expect(keyA).toBe(keyB);
   });
 
+  it("ignores layout-only edge routing changes so midpoint drags do not invalidate the key", () => {
+    const nodesAtLayoutA = [utilityNode("utility-a"), mvsgNode("mvsg-a")];
+    const nodesAtLayoutB = [
+      { ...utilityNode("utility-a"), position: { x: 240, y: 96 } },
+      { ...mvsgNode("mvsg-a"), position: { x: 624, y: 336 } }
+    ];
+    const edgesAtRouteA = [breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED)];
+    const edgesAtRouteB = [
+      {
+        ...breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+        pathOptions: {
+          centerX: 456,
+          centerY: 216
+        }
+      }
+    ];
+    const keyA = createTopologyKey(nodesAtLayoutA, edgesAtRouteA);
+    const keyB = createTopologyKey(nodesAtLayoutB, edgesAtRouteB);
+
+    expect(keyA).toBe(keyB);
+  });
+
   it("changes when generator source online flag changes", () => {
     const nodesOnline = [generatorNode("gen-a", { isSourceOnline: true }), mvsgNode("mvsg-a")];
     const nodesOffline = [generatorNode("gen-a", { isSourceOnline: false }), mvsgNode("mvsg-a")];

@@ -5,6 +5,7 @@ import NodeDeleteButton from "../components/NodeDeleteButton";
 import NodePropertiesButton from "../components/NodePropertiesButton";
 import { formatTransformerVoltage, formatVoltageValue } from "../electrical/voltage";
 import { TRANSFORMER_HANDLE_ID } from "../topology/transformer";
+import { getNodeShellClassName, NODE_SIZE_FAMILY } from "./nodeLayout";
 
 const PRIMARY_TERMINALS = [
   {
@@ -134,7 +135,9 @@ function PTXNode({ data }) {
           : "bg-violet-500/70";
 
   return (
-    <div className={`relative min-w-60 rounded-md border px-4 pb-3 pt-6 text-left ${shellClassName}`}>
+    <div
+      className={`${getNodeShellClassName(NODE_SIZE_FAMILY.COMPLEX)} rounded-md border px-4 pb-3 pt-6 text-left ${shellClassName}`}
+    >
       <div
         className={`pointer-events-none absolute left-2 right-2 top-3 h-1 rounded-full ${primaryBusRailClassName}`}
       />

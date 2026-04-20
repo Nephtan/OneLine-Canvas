@@ -4,6 +4,7 @@ import InlineLabelEditor from "../components/InlineLabelEditor";
 import NodeDeleteButton from "../components/NodeDeleteButton";
 import NodePropertiesButton from "../components/NodePropertiesButton";
 import { formatVoltageValue } from "../electrical/voltage";
+import { getNodeShellClassName, NODE_SIZE_FAMILY } from "./nodeLayout";
 
 function WarningIcon({ className }) {
   return (
@@ -101,7 +102,9 @@ function LoadNode({ data }) {
           : "border border-cyan-300/70 bg-cyan-500/70";
 
   return (
-    <div className={`min-w-60 rounded-md border px-4 py-3 text-left ${shellClassName}`}>
+    <div
+      className={`${getNodeShellClassName(NODE_SIZE_FAMILY.STANDARD)} rounded-md border px-4 py-3 text-left ${shellClassName}`}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="inline-flex items-center gap-2">
           <LoadIcon className={`h-4 w-4 ${titleClassName}`} />

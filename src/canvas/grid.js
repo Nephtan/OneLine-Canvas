@@ -1,0 +1,2 @@
+export const CANVAS_GRID_SIZE = 24;
+export const CANVAS_SNAP_GRID = [CANVAS_GRID_SIZE, CANVAS_GRID_SIZE];

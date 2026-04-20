@@ -4,6 +4,7 @@ import InlineLabelEditor from "../components/InlineLabelEditor";
 import NodeDeleteButton from "../components/NodeDeleteButton";
 import NodePropertiesButton from "../components/NodePropertiesButton";
 import { formatVoltageValue } from "../electrical/voltage";
+import { getNodeShellClassName, NODE_SIZE_FAMILY } from "./nodeLayout";
 
 function WarningIcon({ className }) {
   return (
@@ -85,7 +86,9 @@ function MVSGNode({ data }) {
           : "border border-slate-300 bg-slate-500";
 
   return (
-    <div className={`min-w-60 rounded-md border px-4 py-3 text-left ${shellClassName}`}>
+    <div
+      className={`${getNodeShellClassName(NODE_SIZE_FAMILY.STANDARD)} rounded-md border px-4 py-3 text-left ${shellClassName}`}
+    >
       <div className="flex items-center justify-between gap-2">
         <div
           className={`text-[10px] uppercase tracking-[0.2em] ${titleClassName}`}

@@ -1,6 +1,8 @@
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from "@xyflow/react";
+import EdgeCenterControl from "../components/EdgeCenterControl";
 import EdgeDeleteButton from "../components/EdgeDeleteButton";
 import { EDGE_POWER_STATE } from "../engine/powerFlow";
+import { getManualEdgeCenter } from "../topology/edgePathOptions";
 
 const STANDARD_DE_ENERGIZED_EDGE_STYLE = {
   stroke: "#64748b",
@@ -28,16 +30,20 @@ function StandardEdge({
   targetY,
   sourcePosition,
   targetPosition,
-  data
+  data,
+  pathOptions
 }) {
   const edgePowerState = data?.powerState ?? EDGE_POWER_STATE.DE_ENERGIZED;
+  const manualCenter = getManualEdgeCenter(pathOptions);
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
-    targetPosition
+    targetPosition,
+    centerX: manualCenter?.centerX,
+    centerY: manualCenter?.centerY
   });
 
   const edgeStyle =
@@ -57,15 +63,23 @@ function StandardEdge({
       />
 
       <EdgeLabelRenderer>
-        <div
-          style={{ left: `${labelX}px`, top: `${labelY}px` }}
-          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-        >
-          <EdgeDeleteButton
-            title={`Delete wire ${id}`}
-            onDelete={data?.onDeleteEdge}
-          />
-        </div>
+        <EdgeCenterControl edgeId={id} labelX={labelX} labelY={labelY}>
+          {(dragHandleProps) => (
+            <div className="flex items-center gap-2">
+              <div
+                {...dragHandleProps}
+                title={`Drag wire ${id} route`}
+                className="pointer-events-auto nodrag nopan inline-flex cursor-grab items-center rounded-full border border-cyan-400/70 bg-slate-950/95 px-2 py-1 shadow-[0_0_8px_rgba(15,23,42,0.65)] active:cursor-grabbing"
+              >
+                <span className="h-1.5 w-6 rounded-full bg-cyan-200/80" />
+              </div>
+              <EdgeDeleteButton
+                title={`Delete wire ${id}`}
+                onDelete={data?.onDeleteEdge}
+              />
+            </div>
+          )}
+        </EdgeCenterControl>
       </EdgeLabelRenderer>
     </>
   );

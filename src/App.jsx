@@ -39,6 +39,7 @@ import {
   EDGE_TYPE,
   normalizeCanvasEdgeType
 } from "./topology/edgeTypes";
+import { CANVAS_GRID_SIZE, CANVAS_SNAP_GRID } from "./canvas/grid";
 
 const nodeTypes = {
   utility: UtilityNode,
@@ -947,10 +948,16 @@ function App() {
         return;
       }
 
-      const position = reactFlowInstance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY
-      });
+      const position = reactFlowInstance.screenToFlowPosition(
+        {
+          x: event.clientX,
+          y: event.clientY
+        },
+        {
+          snapToGrid: true,
+          snapGrid: CANVAS_SNAP_GRID
+        }
+      );
       const nodeUuid = crypto.randomUUID();
       const nodeId = `${nodeType}-${nodeUuid}`;
 
@@ -1065,11 +1072,13 @@ function App() {
             }}
             defaultEdgeOptions={defaultEdgeOptions}
             deleteKeyCode={["Delete", "Backspace"]}
+            snapToGrid
+            snapGrid={CANVAS_SNAP_GRID}
             minZoom={0.2}
             maxZoom={1.8}
             className="bg-slate-950"
           >
-            <Background gap={24} size={1} color="#334155" />
+            <Background gap={CANVAS_GRID_SIZE} size={1} color="#334155" />
             <MiniMap
               pannable
               zoomable
