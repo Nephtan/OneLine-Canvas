@@ -23,6 +23,7 @@ const STANDARD_CONFLICT_EDGE_STYLE = {
 function StandardEdge({
   id,
   data,
+  selected,
   ...edgeProps
 }) {
   const edgePowerState = data?.powerState ?? EDGE_POWER_STATE.DE_ENERGIZED;
@@ -38,14 +39,13 @@ function StandardEdge({
     <OrthogonalEdge
       id={id}
       data={data}
+      selected={selected}
       edgeStyle={edgeStyle}
       label={
-        <div className="flex cursor-grab items-center active:cursor-grabbing">
-          <EdgeDeleteButton
-            title={`Delete wire ${id}`}
-            onDelete={data?.onDeleteEdge}
-          />
-        </div>
+        <EdgeDeleteButton
+          title={`Delete wire ${id}`}
+          onDelete={data?.onDeleteEdge}
+        />
       }
       {...edgeProps}
     />

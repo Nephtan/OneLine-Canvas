@@ -33,52 +33,40 @@ export function snapCanvasPoint(point) {
   };
 }
 
-function normalizeEdgeControlPoint(controlPoint) {
-  if (controlPoint === null || typeof controlPoint !== "object") {
-    return null;
+export function createEdgeWaypointId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
   }
 
-  return snapCanvasPoint(controlPoint);
+  return `waypoint-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function normalizeLegacyWaypoint(waypoint) {
+export function normalizeEdgeWaypoint(waypoint, fallbackIndex) {
   if (waypoint === null || typeof waypoint !== "object") {
     return null;
   }
 
-  return snapCanvasPoint(waypoint);
-}
+  const snappedPoint = snapCanvasPoint(waypoint);
 
-function deriveControlPointFromLegacyWaypoints(rawWaypoints) {
-  const waypoints = Array.isArray(rawWaypoints)
-    ? rawWaypoints.map((waypoint) => normalizeLegacyWaypoint(waypoint)).filter(Boolean)
-    : [];
-
-  if (waypoints.length === 0) {
-    return null;
-  }
-
-  if (waypoints.length === 1) {
-    return waypoints[0];
-  }
-
-  const leftIndex = Math.floor((waypoints.length - 1) / 2);
-  const rightIndex = Math.ceil((waypoints.length - 1) / 2);
-  const leftWaypoint = waypoints[leftIndex];
-  const rightWaypoint = waypoints[rightIndex];
-
-  return snapCanvasPoint({
-    x: (leftWaypoint.x + rightWaypoint.x) / 2,
-    y: (leftWaypoint.y + rightWaypoint.y) / 2
-  });
+  return {
+    id:
+      typeof waypoint.id === "string" && waypoint.id.trim() !== ""
+        ? waypoint.id
+        : `waypoint-${fallbackIndex}`,
+    x: snappedPoint.x,
+    y: snappedPoint.y
+  };
 }
 
 export function normalizeEdgeLayout(layout) {
-  const controlPoint = normalizeEdgeControlPoint(layout?.controlPoint);
+  const rawWaypoints = Array.isArray(layout?.waypoints) ? layout.waypoints : [];
 
   return {
-    controlPoint:
-      controlPoint ?? deriveControlPointFromLegacyWaypoints(layout?.waypoints)
+    waypoints: rawWaypoints
+      .map((waypoint, waypointIndex) =>
+        normalizeEdgeWaypoint(waypoint, waypointIndex)
+      )
+      .filter(Boolean)
   };
 }
 
@@ -91,29 +79,24 @@ export function normalizeCanvasEdgeData(edgeData) {
   return nextEdgeData;
 }
 
-export function getEdgeControlPoint(edgeOrData) {
+export function getEdgeWaypoints(edgeOrData) {
   if (
     edgeOrData !== null &&
     typeof edgeOrData === "object" &&
     "data" in edgeOrData
   ) {
-    return normalizeCanvasEdgeData(edgeOrData.data).layout.controlPoint;
+    return normalizeCanvasEdgeData(edgeOrData.data).layout.waypoints;
   }
 
-  return normalizeCanvasEdgeData(edgeOrData).layout.controlPoint;
+  return normalizeCanvasEdgeData(edgeOrData).layout.waypoints;
 }
 
-export function translateEdgeControlPoint(controlPoint, delta) {
-  const normalizedControlPoint = normalizeEdgeControlPoint(controlPoint);
-
-  if (!normalizedControlPoint) {
-    return null;
-  }
-
-  return snapCanvasPoint({
-    x: normalizedControlPoint.x + (delta?.x ?? 0),
-    y: normalizedControlPoint.y + (delta?.y ?? 0)
-  });
+export function translateEdgeWaypoints(waypoints, delta) {
+  return waypoints.map((waypoint) => ({
+    ...waypoint,
+    x: snapCanvasCoordinate(waypoint.x + (delta?.x ?? 0)),
+    y: snapCanvasCoordinate(waypoint.y + (delta?.y ?? 0))
+  }));
 }
 
 function getAxisForPosition(position) {
@@ -244,15 +227,14 @@ export function buildOrthogonalEdgeRoute({
   targetY,
   sourcePosition,
   targetPosition,
-  controlPoint = null
+  waypoints = []
 }) {
-  const normalizedControlPoint = normalizeEdgeLayout({ controlPoint }).controlPoint;
+  const normalizedWaypoints = normalizeEdgeLayout({ waypoints }).waypoints;
   const sourcePoint = createPoint(sourceX, sourceY);
   const targetPoint = createPoint(targetX, targetY);
-  const anchors = normalizedControlPoint
-    ? [sourcePoint, normalizedControlPoint, targetPoint]
-    : [sourcePoint, targetPoint];
+  const anchors = [sourcePoint, ...normalizedWaypoints, targetPoint];
   const pathPoints = [sourcePoint];
+  const segments = [];
 
   for (let anchorIndex = 0; anchorIndex < anchors.length - 1; anchorIndex += 1) {
     const from = anchors[anchorIndex];
@@ -268,17 +250,36 @@ export function buildOrthogonalEdgeRoute({
     });
 
     legPoints.forEach((point) => {
+      const previousPoint = pathPoints[pathPoints.length - 1];
+
       pushPathPoint(pathPoints, point);
+
+      const nextPoint = pathPoints[pathPoints.length - 1];
+
+      if (arePointsEqual(previousPoint, nextPoint)) {
+        return;
+      }
+
+      segments.push({
+        start: previousPoint,
+        end: nextPoint,
+        midpoint: createPoint(
+          (previousPoint.x + nextPoint.x) / 2,
+          (previousPoint.y + nextPoint.y) / 2
+        ),
+        insertIndex: anchorIndex
+      });
     });
   }
 
-  const routeControlPoint = normalizedControlPoint ?? getPolylineLabelPosition(pathPoints);
+  const labelPosition = getPolylineLabelPosition(pathPoints);
 
   return {
+    waypoints: normalizedWaypoints,
     pathPoints,
     path: createPathFromPoints(pathPoints),
-    controlPoint: routeControlPoint,
-    labelX: routeControlPoint.x,
-    labelY: routeControlPoint.y
+    labelX: labelPosition.x,
+    labelY: labelPosition.y,
+    segments
   };
 }

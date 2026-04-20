@@ -41,6 +41,7 @@ const TRIPPED_EDGE_STYLE = {
 function BreakerEdge({
   id,
   data,
+  selected,
   ...edgeProps
 }) {
   const breakerState = normalizeBreakerState(data?.breakerState);
@@ -81,10 +82,11 @@ function BreakerEdge({
     <OrthogonalEdge
       id={id}
       data={data}
+      selected={selected}
       edgeStyle={edgeStyle}
       className="cursor-pointer"
       label={
-        <div className="flex cursor-grab items-center gap-2 active:cursor-grabbing">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             title={`Toggle breaker ${id}`}

@@ -423,7 +423,7 @@ describe("evaluatePowerFlow", () => {
     expect(edgePowerStateByEdgeId["breaker-1"]).toBe(EDGE_POWER_STATE.DE_ENERGIZED);
   });
 
-  it("ignores visual-only edge control points during electrical evaluation", () => {
+  it("ignores visual-only edge routing waypoints during electrical evaluation", () => {
     const nodes = [
       utilityNode("utility-a"),
       mvsgNode("mvsg-a"),
@@ -437,14 +437,17 @@ describe("evaluatePowerFlow", () => {
       breakerEdge("breaker-1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED, {
         data: {
           layout: {
-            controlPoint: { x: 240, y: 144 }
+            waypoints: [{ id: "breaker-waypoint", x: 240, y: 144 }]
           }
         }
       }),
       standardEdge("wire-1", "mvsg-a", "load-a", {
         data: {
           layout: {
-            controlPoint: { x: 336, y: 216 }
+            waypoints: [
+              { id: "wire-waypoint-a", x: 336, y: 168 },
+              { id: "wire-waypoint-b", x: 336, y: 264 }
+            ]
           }
         }
       })
@@ -458,64 +461,6 @@ describe("evaluatePowerFlow", () => {
       unroutedResult.edgePowerStateByEdgeId
     );
     expect(routedResult.faultedEdgeIds).toEqual(unroutedResult.faultedEdgeIds);
-  });
-
-  it("normalizes legacy waypoint layouts into control points without changing electrical evaluation", () => {
-    const nodes = [
-      utilityNode("utility-a"),
-      mvsgNode("mvsg-a"),
-      loadNode("load-a", { nominalVoltage: DEFAULT_MEDIUM_VOLTAGE })
-    ];
-    const unroutedEdges = [
-      breakerEdge("breaker-1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
-      standardEdge("wire-1", "mvsg-a", "load-a")
-    ];
-    const normalizedGraph = normalizeGraphState({
-      nodes,
-      edges: [
-        breakerEdge("breaker-1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED, {
-          data: {
-            layout: {
-              waypoints: [{ id: "breaker-waypoint", x: 240, y: 144 }]
-            }
-          }
-        }),
-        standardEdge("wire-1", "mvsg-a", "load-a", {
-          data: {
-            layout: {
-              waypoints: [
-                { id: "wire-waypoint-a", x: 336, y: 168 },
-                { id: "wire-waypoint-b", x: 336, y: 264 }
-              ]
-            }
-          }
-        })
-      ]
-    });
-
-    expect(normalizedGraph.edges[0].data.layout.controlPoint).toEqual({
-      x: 240,
-      y: 144
-    });
-    expect(normalizedGraph.edges[1].data.layout.controlPoint).toEqual({
-      x: 336,
-      y: 216
-    });
-    expect(normalizedGraph.edges[0].data.layout.waypoints).toBeUndefined();
-    expect(normalizedGraph.edges[1].data.layout.waypoints).toBeUndefined();
-
-    const unroutedResult = evaluatePowerFlow(nodes, unroutedEdges);
-    const normalizedResult = evaluatePowerFlow(
-      normalizedGraph.nodes,
-      normalizedGraph.edges
-    );
-
-    expect(normalizedResult.powerStateByNodeId).toEqual(unroutedResult.powerStateByNodeId);
-    expect(normalizedResult.sourceIdsByNodeId).toEqual(unroutedResult.sourceIdsByNodeId);
-    expect(normalizedResult.edgePowerStateByEdgeId).toEqual(
-      unroutedResult.edgePowerStateByEdgeId
-    );
-    expect(normalizedResult.faultedEdgeIds).toEqual(unroutedResult.faultedEdgeIds);
   });
 
   it("energizes PTX and Load in a downstream chain from one utility", () => {
@@ -1453,13 +1398,13 @@ describe("createTopologyKey", () => {
     expect(breakerKey).not.toBe(standardKey);
   });
 
-  it("ignores edge control-point layout changes so visual reroutes do not invalidate the key", () => {
+  it("ignores edge waypoint layout changes so visual reroutes do not invalidate the key", () => {
     const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a")];
     const straightEdges = [
       breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED, {
         data: {
           layout: {
-            controlPoint: null
+            waypoints: []
           }
         }
       })
@@ -1468,7 +1413,10 @@ describe("createTopologyKey", () => {
       breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED, {
         data: {
           layout: {
-            controlPoint: { x: 216, y: 192 }
+            waypoints: [
+              { id: "route-a", x: 216, y: 144 },
+              { id: "route-b", x: 216, y: 240 }
+            ]
           }
         }
       })
