@@ -1,4 +1,4 @@
-# OneLine-Canvas Master Handoff (Phases 1-15)
+# OneLine-Canvas Master Handoff (Phases 1-15 + Working Tree Updates)
 
 `handoff.md` is the historical architecture log. For the live backlog of unresolved modeling, workflow, testing, and documentation gaps, see `OUTSTANDING.md`.
 
@@ -25,6 +25,7 @@
 | Working Tree | `working-tree` | `2026-04-17` | `Repair PTX top-edge terminal visuals` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Add grid-snapped node layout and draggable edge midpoints` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Add UPS node, directional power flow, and switchboard bottom landing` | Implemented |
+| Working Tree | `working-tree` | `2026-04-20` | `Expand node editability and breaker-based source display` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -483,12 +484,17 @@
   - `package.json` now declares a Node engine policy of `^20.19.0 || >=22.12.0`.
   - `scripts/check-deps.mjs` validates Node version, manifest/lockfile parity, `DEPENDENCIES.md` parity, `node_modules` presence, and top-level npm install health.
   - Dependency validation no longer relies on nested npm process launches, allowing `npm run check:deps` to work in this repo environment.
+- Latest working-tree summary:
+  - Expanded the shared properties modal from a switchboard / UPS-focused editor into a broader node editor covering source online state, sync groups, transfer active source, and descriptive/rating metadata across the current node lineup.
+  - Canonical node normalization now preserves `ratedCurrentAmps` on MVSG, load, transfer-switch, and mechanical gear, while descriptive class fields fall back cleanly when operators clear them.
+  - Added a parallel `displaySourceNodeIdsByNodeId` engine output so the canvas can show nearest breaker-fed upstream node labels without changing the root-source propagation used for live/backfeed/conflict evaluation.
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
   - Queue-based packet propagation over dynamically built adjacency from the current canvas graph.
-  - Each packet carries `{ sourceId, voltage }`, so energized state and propagated voltage are evaluated together instead of as separate post-processing steps.
+  - Each packet now carries `{ sourceId, voltage, displaySourceNodeId }`, so electrical state and breaker-boundary display provenance can be evaluated in one memoized traversal pass.
   - Conductive edges are added to adjacency only after edge-type and ATS-handle evaluation: `breaker` edges must be `closed`, while `standard` wires conduct unless an ATS interlock blocks that branch.
+  - Display-source attribution is independent from electrical source attribution: crossing a closed breaker resets the packet display boundary to the current node, while standard wires and internal PTX / ATS / UPS conduction preserve the last breaker boundary.
 - Voltage handling:
   - Root sources inject their own `nominalVoltage` into the traversal when online.
   - Non-transformer nodes conduct packets unchanged and mark `Voltage Fault` whenever any incoming packet voltage differs from their `nominalVoltage`.
@@ -521,7 +527,7 @@
 - Topology key includes node identity/type plus root-source online signatures, normalized root sync-group signatures, and transfer-switch `activeSource`.
 - Topology key also includes UPS `operatingMode`, UPS `batteryAvailable`, and UPS `syncGroup`, plus any source/target handle differences such as switchboard top-vs-bottom landings.
 - Topology key includes edge type, source/target, source-handle/target-handle IDs, and breaker state (`open`, `closed`, `tripped`) where applicable.
-- Position-only drags, manual midpoint reroutes, and label-only renames do not invalidate traversal cache.
+- Position-only drags, manual midpoint reroutes, and label-only renames do not invalidate traversal cache; display-source labels are remapped at render time from live node labels instead.
 
 ### Locked Behavioral Contracts for Implementers
 - Topology source of truth is always live React Flow `nodes`/`edges`; no hardcoded adjacency is permitted.
@@ -530,11 +536,12 @@
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
 - Persistence contract is now `{ nodes, edges, mopSteps, mopBaseSnapshot }` with backward-compatible shallow import validation at the top-level graph shape.
 - Manual edge routing metadata is view-only and must stay isolated under `edge.pathOptions.centerX` / `centerY`; it must never alter conductivity, topology extraction, or breaker semantics.
-- `usePowerFlow` now returns `faultedEdgeIds` in addition to node/edge power maps.
+- `usePowerFlow` now returns `displaySourceNodeIdsByNodeId` and `faultedEdgeIds` in addition to node/edge power maps.
 - Canonical voltage metadata must remain numeric in volts: standard gear uses `nominalVoltage`, while PTXs use `primaryVoltage` and `secondaryVoltage`.
-- Voltage-aware traversal packets must preserve both `sourceId` and propagated voltage all the way through memoized evaluation.
+- Voltage-aware traversal packets must preserve `sourceId`, propagated voltage, and breaker-boundary display provenance all the way through memoized evaluation.
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
 - Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
+- Canvas `Sources:` readouts must use breaker-boundary display provenance mapped through current node labels, not raw root source IDs.
 - PTX handle semantics are deterministic: `ptx-bus-in` and `ptx-bus-loop-target` are primary targets, `ptx-bus-in-source` and `ptx-bus-loop` are primary MV sources, and `ptx-bus-out` remains the stepped secondary source.
 - PTX rendering must expose only two visible top-edge operator terminals even though four logical primary handles exist internally for strict source/target connectivity.
 - PTX conduction is side-aware and idealized: matched primary or secondary arrivals energize the internal primary bus, any primary-side edge tied to that bus can then conduct for compatibility, matched primary paths still transform to `secondaryVoltage`, matched secondary paths still step back up to `primaryVoltage`, and mismatched arrivals block that direction.
@@ -564,6 +571,7 @@
 - ATS nodes now prevent primary/emergency source paralleling internally, but they do not yet implement automatic transfer, source-fail sensing, permissive timers, or neutral-position logic.
 - UPS nodes now model directional line-vs-load isolation, but they do not yet implement separate rectifier / bypass inputs, maintenance bypass paths, automatic source-fail sensing, battery depletion, or charger-state behavior.
 - PTX primary daisy-chains are currently modeled as always-continuous internal buses; explicit S1/S2-style MV switch states or isolation points are not yet operator-editable.
+- PTX current metadata remains intentionally undefined; the repo does not yet model whether transformer current ratings belong on the primary, secondary, or both sides.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 - `npm run check:deps` currently assumes a clean `node_modules`; Vite temp directories such as `.vite` and `.vite-temp` can trigger false-positive extraneous-package failures after normal dev/build/test activity.
 - Visual delete controls, grid-snapped layout ergonomics, edge midpoint dragging, and connection draw-mode workflows are now present, but there is still no automated UI coverage for these operator paths.
@@ -573,6 +581,7 @@
 ### Existing Engine Test Coverage (`src/engine/powerFlow.test.js`)
 - Continuity and topology-key behavior for open/closed breaker paths.
 - Standard-wire continuity, mixed breaker/wire corridors, and edge-type topology-key invalidation.
+- Breaker-boundary display-source attribution, including breaker-then-wire inheritance, downstream-breaker boundary reset, direct-wire `Sources: None`, PTX secondary downstream attribution, and multi-feed display-source aggregation.
 - Source aggregation with explicit assertions for `Backfeed` and `Phase Conflict`.
 - Sync-group-aware conflict resolution for same-group parallel, blank/mixed-group conflict, and normalization behavior.
 - Edge power-state mapping (`de-energized`, `energized`, `phase-conflict`).

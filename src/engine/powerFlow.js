@@ -241,8 +241,10 @@ function getNodeVoltageSignature(node) {
   return String(getNodeNominalVoltage(node));
 }
 
-function createPacketKey(nodeId, arrivalSide, sourceId, voltage) {
-  return `${nodeId}|${arrivalSide ?? "bus"}|${sourceId}|${voltage}`;
+function createPacketKey(nodeId, arrivalSide, sourceId, voltage, displaySourceNodeId) {
+  return `${nodeId}|${arrivalSide ?? "bus"}|${sourceId}|${voltage}|${
+    displaySourceNodeId ?? "-"
+  }`;
 }
 
 function createArrivalBuckets() {
@@ -271,6 +273,12 @@ function getArrivalSideForNeighbor(edge, neighborNode) {
   }
 
   return null;
+}
+
+function getNextDisplaySourceNodeId(edge, currentNodeId, currentDisplaySourceNodeId) {
+  return normalizeCanvasEdgeType(edge.type) === EDGE_TYPE.BREAKER
+    ? currentNodeId
+    : currentDisplaySourceNodeId;
 }
 
 function getTransformerOutgoingTransmissions(node, arrivalSide, voltage) {
@@ -456,6 +464,7 @@ export function evaluatePowerFlow(nodes, edges) {
   const adjacencySets = new Map();
   const incidentEdgesByNodeId = new Map();
   const sourceSetsByNodeId = new Map();
+  const displaySourceSetsByNodeId = new Map();
   const voltageSetsByNodeId = new Map();
   const arrivalBucketsByNodeId = new Map();
   const edgeTransmissionSourceIdsByEdgeId = new Map();
@@ -464,6 +473,7 @@ export function evaluatePowerFlow(nodes, edges) {
     adjacencySets.set(nodeId, new Set());
     incidentEdgesByNodeId.set(nodeId, []);
     sourceSetsByNodeId.set(nodeId, new Set());
+    displaySourceSetsByNodeId.set(nodeId, new Set());
     voltageSetsByNodeId.set(nodeId, new Set());
     arrivalBucketsByNodeId.set(nodeId, createArrivalBuckets());
   }
@@ -487,8 +497,14 @@ export function evaluatePowerFlow(nodes, edges) {
   const packetQueue = [];
   const seenPacketKeys = new Set();
 
-  function enqueuePacket(nodeId, arrivalSide, sourceId, voltage) {
-    const packetKey = createPacketKey(nodeId, arrivalSide, sourceId, voltage);
+  function enqueuePacket(nodeId, arrivalSide, sourceId, voltage, displaySourceNodeId) {
+    const packetKey = createPacketKey(
+      nodeId,
+      arrivalSide,
+      sourceId,
+      voltage,
+      displaySourceNodeId
+    );
 
     if (seenPacketKeys.has(packetKey)) {
       return;
@@ -499,7 +515,8 @@ export function evaluatePowerFlow(nodes, edges) {
       nodeId,
       arrivalSide,
       sourceId,
-      voltage
+      voltage,
+      displaySourceNodeId
     });
   }
 
@@ -510,7 +527,8 @@ export function evaluatePowerFlow(nodes, edges) {
         node.id,
         isUpsBatterySource(node) ? UPS_HANDLE_ID.OUTPUT : null,
         node.id,
-        getNodeNominalVoltage(node)
+        getNodeNominalVoltage(node),
+        null
       );
     });
 
@@ -531,6 +549,9 @@ export function evaluatePowerFlow(nodes, edges) {
       shouldRecordArrivalForUps(currentNode, packet.arrivalSide)
     ) {
       sourceSetsByNodeId.get(packet.nodeId).add(packet.sourceId);
+      if (packet.displaySourceNodeId) {
+        displaySourceSetsByNodeId.get(packet.nodeId).add(packet.displaySourceNodeId);
+      }
       voltageSetsByNodeId.get(packet.nodeId).add(packet.voltage);
       recordArrivalVoltage(
         arrivalBucketsByNodeId,
@@ -572,13 +593,19 @@ export function evaluatePowerFlow(nodes, edges) {
 
           const neighborId = getNeighborIdForEdge(edge, packet.nodeId);
           const neighborNode = nodeById.get(neighborId);
+          const nextDisplaySourceNodeId = getNextDisplaySourceNodeId(
+            edge,
+            packet.nodeId,
+            packet.displaySourceNodeId
+          );
 
           edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
           enqueuePacket(
             neighborId,
             getArrivalSideForNeighbor(edge, neighborNode),
             packet.sourceId,
-            outgoingTransmission.outgoingVoltage
+            outgoingTransmission.outgoingVoltage,
+            nextDisplaySourceNodeId
           );
         }
       }
@@ -607,13 +634,19 @@ export function evaluatePowerFlow(nodes, edges) {
 
           const neighborId = getNeighborIdForEdge(edge, packet.nodeId);
           const neighborNode = nodeById.get(neighborId);
+          const nextDisplaySourceNodeId = getNextDisplaySourceNodeId(
+            edge,
+            packet.nodeId,
+            packet.displaySourceNodeId
+          );
 
           edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
           enqueuePacket(
             neighborId,
             getArrivalSideForNeighbor(edge, neighborNode),
             packet.sourceId,
-            outgoingTransmission.outgoingVoltage
+            outgoingTransmission.outgoingVoltage,
+            nextDisplaySourceNodeId
           );
         }
       }
@@ -624,13 +657,19 @@ export function evaluatePowerFlow(nodes, edges) {
     for (const edge of incidentEdges) {
       const neighborId = getNeighborIdForEdge(edge, packet.nodeId);
       const neighborNode = nodeById.get(neighborId);
+      const nextDisplaySourceNodeId = getNextDisplaySourceNodeId(
+        edge,
+        packet.nodeId,
+        packet.displaySourceNodeId
+      );
 
       edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
       enqueuePacket(
         neighborId,
         getArrivalSideForNeighbor(edge, neighborNode),
         packet.sourceId,
-        packet.voltage
+        packet.voltage,
+        nextDisplaySourceNodeId
       );
     }
   }
@@ -638,17 +677,21 @@ export function evaluatePowerFlow(nodes, edges) {
   const powerStateByNodeId = {};
   const powerFlagsByNodeId = {};
   const sourceIdsByNodeId = {};
+  const displaySourceNodeIdsByNodeId = {};
   const propagatingVoltagesByNodeId = {};
 
   for (const nodeId of nodeIds) {
     const node = nodeById.get(nodeId);
     const sourceSet = sourceSetsByNodeId.get(nodeId);
+    const displaySourceSet = displaySourceSetsByNodeId.get(nodeId);
     const voltageSet = voltageSetsByNodeId.get(nodeId);
     const sourceIds = Array.from(sourceSet ?? []).sort();
+    const displaySourceNodeIds = Array.from(displaySourceSet ?? []).sort();
     const voltageValues = Array.from(voltageSet ?? []).sort((left, right) => left - right);
     const powerFlags = createEmptyPowerFlags();
 
     sourceIdsByNodeId[nodeId] = sourceIds;
+    displaySourceNodeIdsByNodeId[nodeId] = displaySourceNodeIds;
     propagatingVoltagesByNodeId[nodeId] = voltageValues;
 
     if (sourceIds.length > 0) {
@@ -723,6 +766,7 @@ export function evaluatePowerFlow(nodes, edges) {
     powerStateByNodeId,
     powerFlagsByNodeId,
     sourceIdsByNodeId,
+    displaySourceNodeIdsByNodeId,
     propagatingVoltagesByNodeId,
     adjacencyByNodeId,
     edgePowerStateByEdgeId,

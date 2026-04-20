@@ -4,7 +4,8 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 `handoff.md` remains the historical architecture narrative; this checklist tracks what still needs to be closed.
 
 ## Electrical Data Model
-- [ ] Extend the newly-added switchboard and UPS current/rating metadata pattern across the rest of the node lineup where ratings are still absent.
+- [ ] Resolve PTX current-rating semantics explicitly: decide whether transformer current metadata belongs on the primary side, secondary side, or both.
+- [ ] Decide whether root-source nodes should also carry optional current/rating metadata or remain voltage/sync-only sources for now.
 - [ ] Add canonical editable electrical metadata for breaker, wire, switch, and future protective-device edges, including optional `ratedCurrentAmps` and device-specific rating fields.
 - [ ] Normalize equipment-specific metadata contracts so new, imported, and hydrated gear preserve electrical ratings consistently.
 - [ ] Define which metadata belongs on nodes versus edges for switchgear line/load terminals, breaker devices, and future protective schemes.
@@ -37,14 +38,16 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 
 ## Testing and Performance
 - [ ] Add tests for canonical electrical metadata normalization and persistence across create, hydrate, export, and import flows.
+- [ ] Add focused tests around display-source provenance for future devices with directional semantics beyond the current breaker / wire / PTX / ATS / UPS lineup.
 - [ ] Add formal large-graph stress and performance coverage for traversal cost ceilings and memoization stability.
 - [ ] Add tests for any future protection, relay coordination, or breaker rating semantics.
 
 ## UI and Workflow Coverage
 - [ ] Add automated UI coverage for grid snapping, manual edge midpoint routing, delete controls, breaker-vs-wire draw mode selection, SCADA actions, and MOP recording or playback flows.
 - [ ] Decide whether manual edge routing needs reset-to-auto controls, richer multi-bend editing, or obstacle-aware autorouting beyond the current single midpoint anchor.
-- [ ] Expand the new properties modal beyond the current switchboard / UPS support into broader equipment coverage, richer device ratings, and bulk-edit workflows.
+- [ ] Expand the broader properties modal into bulk-edit workflows, richer device ratings, and edge-property editing so large projects do not require node-by-node metadata entry.
 - [ ] Add UI validation or guided affordances around new multi-landing cases such as switchboard bottom-bus targets so operators can tell which landing is semantically equivalent versus electrically distinct.
+- [ ] Decide whether `Sources: None` on direct-wire-fed live gear needs an alternate operator-facing provenance cue for cases where no breaker boundary exists.
 - [ ] Define how electrical metadata editing should scale across large project topologies without overloading the canvas UI.
 
 ## Documentation Alignment

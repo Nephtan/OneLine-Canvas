@@ -27,7 +27,7 @@ function WarningIcon({ className }) {
 
 function MVSGNode({ data }) {
   const powerState = data.powerState ?? NODE_POWER_STATE.DEAD;
-  const sourceIds = data.sourceIds ?? [];
+  const displaySourceLabels = data.displaySourceLabels ?? [];
   const propagatingVoltages = data.propagatingVoltages ?? [];
 
   const shellClassName =
@@ -125,7 +125,7 @@ function MVSGNode({ data }) {
         {powerState}
       </div>
       <div className="mt-1 text-[10px] text-slate-400">
-        Sources: {sourceIds.length > 0 ? sourceIds.join(", ") : "None"}
+        Sources: {displaySourceLabels.length > 0 ? displaySourceLabels.join(", ") : "None"}
       </div>
       <div className="mt-1 text-[10px] text-slate-400">
         Voltages:{" "}

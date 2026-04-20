@@ -4,8 +4,16 @@ import {
   formatVoltageValue,
   parseVoltageInput
 } from "../electrical/voltage";
-import { normalizeNodeData } from "../nodes/nodeData";
+import {
+  isSourceNodeType,
+  normalizeNodeData
+} from "../nodes/nodeData";
 import { isTransformerNodeType } from "../topology/transformer";
+import {
+  TRANSFER_SWITCH_ACTIVE_SOURCE,
+  formatTransferSwitchActiveSource,
+  normalizeTransferSwitchActiveSource
+} from "../topology/transferSwitch";
 import {
   formatUpsOperatingMode,
   isUpsNodeType,
@@ -44,6 +52,19 @@ function parseOptionalPositiveInteger(value) {
   return Number.isFinite(numericValue) && numericValue > 0 ? Math.round(numericValue) : null;
 }
 
+function stringifyOptionalPositiveInteger(value) {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function trimTextOrEmpty(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function trimTextOrFallback(value, fallbackValue) {
+  const trimmedValue = trimTextOrEmpty(value);
+  return trimmedValue !== "" ? trimmedValue : fallbackValue;
+}
+
 function buildDraftFromNode(node) {
   const normalizedNodeData = normalizeNodeData(node);
 
@@ -60,14 +81,43 @@ function buildDraftFromNode(node) {
     nominalVoltage: String(normalizedNodeData.nominalVoltage)
   };
 
+  if (isSourceNodeType(node.type)) {
+    return {
+      ...baseDraft,
+      syncGroup: normalizedNodeData.syncGroup ?? "",
+      isSourceOnline: normalizedNodeData.isSourceOnline !== false
+    };
+  }
+
+  if (node.type === "mvsg") {
+    return {
+      ...baseDraft,
+      ratedCurrentAmps: stringifyOptionalPositiveInteger(normalizedNodeData.ratedCurrentAmps)
+    };
+  }
+
+  if (node.type === "load") {
+    return {
+      ...baseDraft,
+      loadClass: normalizedNodeData.loadClass ?? "",
+      ratedCurrentAmps: stringifyOptionalPositiveInteger(normalizedNodeData.ratedCurrentAmps)
+    };
+  }
+
   if (node.type === "switchboard") {
     return {
       ...baseDraft,
       boardClass: normalizedNodeData.boardClass ?? "",
-      ratedCurrentAmps:
-        typeof normalizedNodeData.ratedCurrentAmps === "number"
-          ? String(normalizedNodeData.ratedCurrentAmps)
-          : ""
+      ratedCurrentAmps: stringifyOptionalPositiveInteger(normalizedNodeData.ratedCurrentAmps)
+    };
+  }
+
+  if (node.type === "transferSwitch") {
+    return {
+      ...baseDraft,
+      switchClass: normalizedNodeData.switchClass ?? "",
+      activeSource: normalizeTransferSwitchActiveSource(normalizedNodeData.activeSource),
+      ratedCurrentAmps: stringifyOptionalPositiveInteger(normalizedNodeData.ratedCurrentAmps)
     };
   }
 
@@ -75,21 +125,22 @@ function buildDraftFromNode(node) {
     return {
       ...baseDraft,
       upsClass: normalizedNodeData.upsClass ?? "",
-      ratedCurrentAmps:
-        typeof normalizedNodeData.ratedCurrentAmps === "number"
-          ? String(normalizedNodeData.ratedCurrentAmps)
-          : "",
-      kvaRating:
-        typeof normalizedNodeData.kvaRating === "number"
-          ? String(normalizedNodeData.kvaRating)
-          : "",
-      batteryRuntimeMinutes:
-        typeof normalizedNodeData.batteryRuntimeMinutes === "number"
-          ? String(normalizedNodeData.batteryRuntimeMinutes)
-          : "",
+      ratedCurrentAmps: stringifyOptionalPositiveInteger(normalizedNodeData.ratedCurrentAmps),
+      kvaRating: stringifyOptionalPositiveInteger(normalizedNodeData.kvaRating),
+      batteryRuntimeMinutes: stringifyOptionalPositiveInteger(
+        normalizedNodeData.batteryRuntimeMinutes
+      ),
       batteryAvailable: normalizedNodeData.batteryAvailable !== false,
       operatingMode: normalizeUpsOperatingMode(normalizedNodeData.operatingMode),
       syncGroup: normalizedNodeData.syncGroup ?? ""
+    };
+  }
+
+  if (node.type === "mechanical") {
+    return {
+      ...baseDraft,
+      mechanicalClass: normalizedNodeData.mechanicalClass ?? "",
+      ratedCurrentAmps: stringifyOptionalPositiveInteger(normalizedNodeData.ratedCurrentAmps)
     };
   }
 
@@ -158,7 +209,14 @@ function NumberInputField({
   );
 }
 
-function CheckboxField({ id, label, checked, onChange, helperText }) {
+function CheckboxField({
+  id,
+  label,
+  checked,
+  onChange,
+  helperText,
+  checkboxLabel
+}) {
   return (
     <label htmlFor={id} className="block">
       <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">{label}</div>
@@ -175,7 +233,7 @@ function CheckboxField({ id, label, checked, onChange, helperText }) {
             onKeyDown={stopCanvasEvent}
             className="nodrag h-4 w-4 rounded border-slate-500 bg-slate-900 text-cyan-300 focus:ring-cyan-300/60"
           />
-          Battery system available
+          {checkboxLabel}
         </label>
       </div>
       {helperText ? <div className="mt-1 text-xs text-slate-500">{helperText}</div> : null}
@@ -229,16 +287,24 @@ function NodePropertiesModal({ node, onApply, onClose }) {
   }, [onClose]);
 
   const normalizedNodeData = useMemo(() => normalizeNodeData(node), [node]);
+  const isSourceNode = isSourceNodeType(node.type);
   const isTransformer = isTransformerNodeType(node.type);
   const isUps = isUpsNodeType(node.type);
+  const isMvsg = node.type === "mvsg";
+  const isLoad = node.type === "load";
   const isSwitchboard = node.type === "switchboard";
+  const isTransferSwitch = node.type === "transferSwitch";
+  const isMechanical = node.type === "mechanical";
+  const supportsRatedCurrent =
+    isMvsg || isLoad || isSwitchboard || isTransferSwitch || isMechanical || isUps;
   const modalTitle = NODE_TYPE_LABEL[node.type] ?? "Equipment Properties";
   const trimmedLabel = draft.label.trim();
   const nominalVoltage = isTransformer ? null : parseVoltageInput(draft.nominalVoltage);
   const primaryVoltage = isTransformer ? parseVoltageInput(draft.primaryVoltage) : null;
   const secondaryVoltage = isTransformer ? parseVoltageInput(draft.secondaryVoltage) : null;
-  const ratedCurrentAmps =
-    isUps || isSwitchboard ? parseOptionalPositiveInteger(draft.ratedCurrentAmps) : undefined;
+  const ratedCurrentAmps = supportsRatedCurrent
+    ? parseOptionalPositiveInteger(draft.ratedCurrentAmps)
+    : undefined;
   const kvaRating = isUps ? parseOptionalPositiveInteger(draft.kvaRating) : undefined;
   const batteryRuntimeMinutes = isUps
     ? parseOptionalPositiveInteger(draft.batteryRuntimeMinutes)
@@ -252,7 +318,7 @@ function NodePropertiesModal({ node, onApply, onClose }) {
       ? "Enter a positive secondary voltage in volts."
       : "";
   const ratedCurrentAmpsError =
-    (isUps || isSwitchboard) && ratedCurrentAmps === null
+    supportsRatedCurrent && ratedCurrentAmps === null
       ? "Enter a positive current rating or leave blank."
       : "";
   const kvaRatingError =
@@ -315,21 +381,56 @@ function NodePropertiesModal({ node, onApply, onClose }) {
       nominalVoltage
     };
 
+    if (isSourceNode) {
+      nextProperties.syncGroup = trimTextOrEmpty(draft.syncGroup);
+      nextProperties.isSourceOnline = draft.isSourceOnline;
+    }
+
+    if (isMvsg) {
+      nextProperties.ratedCurrentAmps = ratedCurrentAmps;
+    }
+
+    if (isLoad) {
+      nextProperties.loadClass = trimTextOrFallback(
+        draft.loadClass,
+        normalizedNodeData.loadClass
+      );
+      nextProperties.ratedCurrentAmps = ratedCurrentAmps;
+    }
+
     if (isSwitchboard) {
-      nextProperties.boardClass =
-        draft.boardClass.trim() !== "" ? draft.boardClass.trim() : normalizedNodeData.boardClass;
+      nextProperties.boardClass = trimTextOrFallback(
+        draft.boardClass,
+        normalizedNodeData.boardClass
+      );
+      nextProperties.ratedCurrentAmps = ratedCurrentAmps;
+    }
+
+    if (isTransferSwitch) {
+      nextProperties.switchClass = trimTextOrFallback(
+        draft.switchClass,
+        normalizedNodeData.switchClass
+      );
+      nextProperties.activeSource = normalizeTransferSwitchActiveSource(draft.activeSource);
       nextProperties.ratedCurrentAmps = ratedCurrentAmps;
     }
 
     if (isUps) {
-      nextProperties.upsClass =
-        draft.upsClass.trim() !== "" ? draft.upsClass.trim() : normalizedNodeData.upsClass;
+      nextProperties.upsClass = trimTextOrFallback(draft.upsClass, normalizedNodeData.upsClass);
       nextProperties.ratedCurrentAmps = ratedCurrentAmps;
       nextProperties.kvaRating = kvaRating;
       nextProperties.batteryRuntimeMinutes = batteryRuntimeMinutes;
       nextProperties.batteryAvailable = draft.batteryAvailable;
       nextProperties.operatingMode = normalizeUpsOperatingMode(draft.operatingMode);
-      nextProperties.syncGroup = draft.syncGroup;
+      nextProperties.syncGroup = trimTextOrEmpty(draft.syncGroup);
+    }
+
+    if (isMechanical) {
+      nextProperties.mechanicalClass = trimTextOrFallback(
+        draft.mechanicalClass,
+        normalizedNodeData.mechanicalClass
+      );
+      nextProperties.ratedCurrentAmps = ratedCurrentAmps;
     }
 
     onApply?.(node.id, nextProperties);
@@ -365,7 +466,7 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                 label: nextValue
               }));
             }}
-            helperText="Canvas label used by SCADA, MOP snapshots, and exports."
+            helperText="Canvas label used by SCADA, MOP snapshots, exports, and live source display."
           />
           {trimmedLabel === "" ? (
             <div className="-mt-2 text-[11px] text-rose-200">Label cannot be blank.</div>
@@ -422,6 +523,84 @@ function NodePropertiesModal({ node, onApply, onClose }) {
             />
           )}
 
+          {isSourceNode ? (
+            <>
+              <TextInputField
+                id="node-properties-sync-group"
+                label="Sync Group"
+                value={draft.syncGroup}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    syncGroup: nextValue
+                  }));
+                }}
+                helperText="Optional normalized grouping used to allow safe source paralleling."
+              />
+              <CheckboxField
+                id="node-properties-source-online"
+                label="Source Status"
+                checked={draft.isSourceOnline}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    isSourceOnline: nextValue
+                  }));
+                }}
+                helperText="Offline sources remain on the canvas but stop seeding the graph."
+                checkboxLabel="Source is online"
+              />
+            </>
+          ) : null}
+
+          {isMvsg ? (
+            <NumberInputField
+              id="node-properties-mvsg-rated-current"
+              label="Rated Current (A)"
+              value={draft.ratedCurrentAmps}
+              onChange={(nextValue) => {
+                setDraft((currentDraft) => ({
+                  ...currentDraft,
+                  ratedCurrentAmps: nextValue
+                }));
+              }}
+              helperText="Optional switchgear ampacity metadata for future protection modeling."
+              errorText={ratedCurrentAmpsError}
+              optional
+            />
+          ) : null}
+
+          {isLoad ? (
+            <>
+              <TextInputField
+                id="node-properties-load-class"
+                label="Load Class"
+                value={draft.loadClass}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    loadClass: nextValue
+                  }));
+                }}
+                helperText="Project-agnostic terminal load classification preserved in topology data."
+              />
+              <NumberInputField
+                id="node-properties-load-rated-current"
+                label="Rated Current (A)"
+                value={draft.ratedCurrentAmps}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    ratedCurrentAmps: nextValue
+                  }));
+                }}
+                helperText="Optional connected-load current metadata."
+                errorText={ratedCurrentAmpsError}
+                optional
+              />
+            </>
+          ) : null}
+
           {isSwitchboard ? (
             <>
               <TextInputField
@@ -437,7 +616,7 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                 helperText="Project-agnostic equipment class preserved in topology data."
               />
               <NumberInputField
-                id="node-properties-rated-current"
+                id="node-properties-board-rated-current"
                 label="Rated Current (A)"
                 value={draft.ratedCurrentAmps}
                 onChange={(nextValue) => {
@@ -447,6 +626,63 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                   }));
                 }}
                 helperText="Optional bus ampacity metadata for future protection modeling."
+                errorText={ratedCurrentAmpsError}
+                optional
+              />
+            </>
+          ) : null}
+
+          {isTransferSwitch ? (
+            <>
+              <TextInputField
+                id="node-properties-switch-class"
+                label="Switch Class"
+                value={draft.switchClass}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    switchClass: nextValue
+                  }));
+                }}
+                helperText="Examples: Automatic Transfer Switch, Static Transfer Switch, Manual Transfer Switch."
+              />
+              <SelectField
+                id="node-properties-active-source"
+                label="Active Source"
+                value={draft.activeSource}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    activeSource: nextValue
+                  }));
+                }}
+                options={[
+                  {
+                    value: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
+                    label: formatTransferSwitchActiveSource(
+                      TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+                    )
+                  },
+                  {
+                    value: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY,
+                    label: formatTransferSwitchActiveSource(
+                      TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+                    )
+                  }
+                ]}
+                helperText="Manual v1 transfer position used by the ATS conduction model."
+              />
+              <NumberInputField
+                id="node-properties-transfer-rated-current"
+                label="Rated Current (A)"
+                value={draft.ratedCurrentAmps}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    ratedCurrentAmps: nextValue
+                  }));
+                }}
+                helperText="Optional switch ampacity metadata for future transfer-device modeling."
                 errorText={ratedCurrentAmpsError}
                 optional
               />
@@ -504,6 +740,7 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                   }));
                 }}
                 helperText="When unavailable, Battery mode will not seed the UPS output bus."
+                checkboxLabel="Battery system available"
               />
               <TextInputField
                 id="node-properties-ups-sync-group"
@@ -559,6 +796,37 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                 }}
                 helperText="Optional ride-through duration preserved on the node."
                 errorText={batteryRuntimeMinutesError}
+                optional
+              />
+            </>
+          ) : null}
+
+          {isMechanical ? (
+            <>
+              <TextInputField
+                id="node-properties-mechanical-class"
+                label="Mechanical Class"
+                value={draft.mechanicalClass}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    mechanicalClass: nextValue
+                  }));
+                }}
+                helperText="Project-agnostic mechanical equipment class preserved in topology data."
+              />
+              <NumberInputField
+                id="node-properties-mechanical-rated-current"
+                label="Rated Current (A)"
+                value={draft.ratedCurrentAmps}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    ratedCurrentAmps: nextValue
+                  }));
+                }}
+                helperText="Optional connected-mechanical-load current metadata."
+                errorText={ratedCurrentAmpsError}
                 optional
               />
             </>

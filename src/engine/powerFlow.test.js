@@ -188,6 +188,100 @@ describe("evaluatePowerFlow", () => {
     expect(edgePowerStateByEdgeId["wire-1"]).toBe(EDGE_POWER_STATE.ENERGIZED);
   });
 
+  it("uses the nearest upstream breaker boundary as the display source through downstream wires", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a"), switchboardNode("swbd-a")];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      standardEdge("wire-1", "mvsg-a", "swbd-a")
+    ];
+    const { displaySourceNodeIdsByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(displaySourceNodeIdsByNodeId["mvsg-a"]).toEqual(["utility-a"]);
+    expect(displaySourceNodeIdsByNodeId["swbd-a"]).toEqual(["utility-a"]);
+  });
+
+  it("resets the display source boundary when a downstream breaker is crossed", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      mvsgNode("mvsg-a"),
+      ptxNode("ptx-a"),
+      switchboardNode("swbd-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      standardEdge("wire-1", "mvsg-a", "ptx-a", {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      breakerEdge("e2", "ptx-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY
+      })
+    ];
+    const { displaySourceNodeIdsByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(displaySourceNodeIdsByNodeId["swbd-a"]).toEqual(["ptx-a"]);
+  });
+
+  it("leaves display sources empty when a live path never crosses a breaker", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a")];
+    const edges = [standardEdge("wire-1", "utility-a", "mvsg-a")];
+    const { displaySourceNodeIdsByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(displaySourceNodeIdsByNodeId["utility-a"]).toEqual([]);
+    expect(displaySourceNodeIdsByNodeId["mvsg-a"]).toEqual([]);
+  });
+
+  it("uses the PTX node as the display source for downstream secondary gear after a breaker", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      ptxNode("ptx-a"),
+      switchboardNode("swbd-a"),
+      loadNode("load-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "ptx-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      breakerEdge("e2", "ptx-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY
+      }),
+      standardEdge("wire-1", "swbd-a", "load-a")
+    ];
+    const { displaySourceNodeIdsByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(displaySourceNodeIdsByNodeId["swbd-a"]).toEqual(["ptx-a"]);
+    expect(displaySourceNodeIdsByNodeId["load-a"]).toEqual(["ptx-a"]);
+  });
+
+  it("tracks multiple breaker-fed display sources when synchronized feeds parallel downstream", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      utilityNode("utility-b", { syncGroup: "GRID-A" }),
+      ptxNode("ptx-a"),
+      ptxNode("ptx-b"),
+      switchboardNode("swbd-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "ptx-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      breakerEdge("e2", "utility-b", "ptx-b", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      breakerEdge("e3", "ptx-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY,
+        targetHandle: "switchboard-bus-in"
+      }),
+      breakerEdge("e4", "ptx-b", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY,
+        targetHandle: "switchboard-bus-bottom-in"
+      })
+    ];
+    const { displaySourceNodeIdsByNodeId, powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(displaySourceNodeIdsByNodeId["swbd-a"]).toEqual(["ptx-a", "ptx-b"]);
+  });
+
   it("keeps two independent feeders healthy with an open tie", () => {
     const nodes = [
       utilityNode("utility-a"),

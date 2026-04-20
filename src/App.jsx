@@ -307,6 +307,7 @@ function App() {
     powerStateByNodeId,
     powerFlagsByNodeId,
     sourceIdsByNodeId,
+    displaySourceNodeIdsByNodeId,
     propagatingVoltagesByNodeId,
     edgePowerStateByEdgeId,
     faultedEdgeIds
@@ -832,15 +833,29 @@ function App() {
     [edges, isRecordingMop]
   );
 
-  const renderNodes = useMemo(
-    () =>
-      nodes.map((node) => ({
+  const renderNodes = useMemo(() => {
+    const normalizedNodeDataById = new Map(
+      nodes.map((node) => [node.id, normalizeNodeData(node)])
+    );
+
+    return nodes.map((node) => {
+      const normalizedNodeData = normalizedNodeDataById.get(node.id);
+      const displaySourceLabels = Array.from(
+        new Set(
+          (displaySourceNodeIdsByNodeId[node.id] ?? [])
+            .map((displaySourceNodeId) => normalizedNodeDataById.get(displaySourceNodeId)?.label)
+            .filter((label) => typeof label === "string" && label.trim() !== "")
+        )
+      ).sort((leftLabel, rightLabel) => leftLabel.localeCompare(rightLabel));
+
+      return {
         ...node,
         data: {
-          ...normalizeNodeData(node),
+          ...normalizedNodeData,
           powerState: powerStateByNodeId[node.id] ?? "Dead",
           powerFlags: powerFlagsByNodeId[node.id],
           sourceIds: sourceIdsByNodeId[node.id] ?? [],
+          displaySourceLabels,
           propagatingVoltages: propagatingVoltagesByNodeId[node.id] ?? [],
           onRenameLabel: (nextLabel) => renameNodeLabel(node.id, nextLabel),
           onToggleSourceOnline:
@@ -863,22 +878,23 @@ function App() {
             void handleDeleteNodeRequest(node.id);
           }
         }
-      })),
-    [
-      nodes,
-      powerStateByNodeId,
-      powerFlagsByNodeId,
-      sourceIdsByNodeId,
-      propagatingVoltagesByNodeId,
-      renameNodeLabel,
-      handleSourceToggleRequest,
-      changeNodeSyncGroup,
-      handleTransferSwitchThrowRequest,
-      handleUpsOperatingModeRequest,
-      openNodeProperties,
-      handleDeleteNodeRequest
-    ]
-  );
+      };
+    });
+  }, [
+    nodes,
+    powerStateByNodeId,
+    powerFlagsByNodeId,
+    sourceIdsByNodeId,
+    displaySourceNodeIdsByNodeId,
+    propagatingVoltagesByNodeId,
+    renameNodeLabel,
+    handleSourceToggleRequest,
+    changeNodeSyncGroup,
+    handleTransferSwitchThrowRequest,
+    handleUpsOperatingModeRequest,
+    openNodeProperties,
+    handleDeleteNodeRequest
+  ]);
 
   const renderEdges = useMemo(
     () =>

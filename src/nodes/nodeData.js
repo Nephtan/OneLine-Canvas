@@ -123,6 +123,15 @@ function normalizeOptionalPositiveInteger(value) {
   return normalizedValue === null ? undefined : normalizedValue;
 }
 
+function normalizeOptionalTrimmedText(value, fallbackValue) {
+  if (typeof value !== "string") {
+    return fallbackValue;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue !== "" ? trimmedValue : fallbackValue;
+}
+
 export function normalizeNodeData(node) {
   const fallbackData = getDefaultNodeData(node.type, node.id);
   const currentData =
@@ -177,9 +186,23 @@ export function normalizeNodeData(node) {
 
   if (node.type === "switchboard") {
     nextData.boardClass =
-      typeof currentData.boardClass === "string" && currentData.boardClass.trim() !== ""
-        ? currentData.boardClass
-        : fallbackData.boardClass;
+      normalizeOptionalTrimmedText(currentData.boardClass, fallbackData.boardClass);
+    nextData.ratedCurrentAmps = normalizeOptionalPositiveInteger(
+      currentData.ratedCurrentAmps
+    );
+  }
+
+  if (node.type === "mvsg") {
+    nextData.ratedCurrentAmps = normalizeOptionalPositiveInteger(
+      currentData.ratedCurrentAmps
+    );
+  }
+
+  if (node.type === "load") {
+    nextData.loadClass = normalizeOptionalTrimmedText(
+      currentData.loadClass,
+      fallbackData.loadClass
+    );
     nextData.ratedCurrentAmps = normalizeOptionalPositiveInteger(
       currentData.ratedCurrentAmps
     );
@@ -187,9 +210,7 @@ export function normalizeNodeData(node) {
 
   if (isUpsNodeType(node.type)) {
     nextData.upsClass =
-      typeof currentData.upsClass === "string" && currentData.upsClass.trim() !== ""
-        ? currentData.upsClass
-        : fallbackData.upsClass;
+      normalizeOptionalTrimmedText(currentData.upsClass, fallbackData.upsClass);
     nextData.batteryAvailable = currentData.batteryAvailable !== false;
     nextData.operatingMode = normalizeUpsOperatingMode(currentData.operatingMode);
     nextData.ratedCurrentAmps = normalizeOptionalPositiveInteger(
@@ -198,6 +219,26 @@ export function normalizeNodeData(node) {
     nextData.kvaRating = normalizeOptionalPositiveInteger(currentData.kvaRating);
     nextData.batteryRuntimeMinutes = normalizeOptionalPositiveInteger(
       currentData.batteryRuntimeMinutes
+    );
+  }
+
+  if (isTransferSwitchNodeType(node.type)) {
+    nextData.switchClass = normalizeOptionalTrimmedText(
+      currentData.switchClass,
+      fallbackData.switchClass
+    );
+    nextData.ratedCurrentAmps = normalizeOptionalPositiveInteger(
+      currentData.ratedCurrentAmps
+    );
+  }
+
+  if (node.type === "mechanical") {
+    nextData.mechanicalClass = normalizeOptionalTrimmedText(
+      currentData.mechanicalClass,
+      fallbackData.mechanicalClass
+    );
+    nextData.ratedCurrentAmps = normalizeOptionalPositiveInteger(
+      currentData.ratedCurrentAmps
     );
   }
 
