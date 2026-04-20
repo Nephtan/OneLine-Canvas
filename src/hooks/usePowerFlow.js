@@ -10,6 +10,7 @@ function usePowerFlow(nodes, edges) {
       powerFlagsByNodeId: {},
       sourceIdsByNodeId: {},
       displaySourceNodeIdsByNodeId: {},
+      fedFromNodeIdByNodeId: {},
       propagatingVoltagesByNodeId: {},
       edgePowerStateByEdgeId: {},
       faultedEdgeIds: [],

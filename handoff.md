@@ -26,6 +26,7 @@
 | Working Tree | `working-tree` | `2026-04-20` | `Add grid-snapped node layout and draggable edge midpoints` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Add UPS node, directional power flow, and switchboard bottom landing` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Expand node editability and breaker-based source display` | Implemented |
+| Working Tree | `working-tree` | `2026-04-20` | `Implement operator-facing Fed From and canvas copy/paste` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -367,6 +368,21 @@
   - UPS behavior remains intentionally first-pass: one line input, one load output, no separate rectifier input, static bypass input, maintenance bypass path, or automatic source-fail sensing.
   - UPS battery availability is modeled manually; there is still no runtime depletion, charger state, or timed transfer / retransfer sequencing.
 
+### Working Tree Update: Operator-Facing Fed From and Canvas Copy/Paste
+- Revision: `working-tree`
+- Date: `2026-04-20`
+- Subject: `Implement operator-facing Fed From and canvas copy/paste`
+- Major additions:
+  - Replaced node-card `Sources` readouts with a single operator-facing `Fed From` label mapped from the preferred live feeder node at render time.
+  - Added app-local keyboard copy/paste for selected nodes plus any edges whose source and target nodes are both inside the selection, while preserving node metadata, edge metadata, and manual edge midpoint routing.
+  - Added a pure clipboard helper plus headless tests covering subgraph extraction, id remapping, cursor-anchored paste placement, grid snapping, and repeated-paste nudging.
+- Engine-state evolution:
+  - Traversal packets now carry preferred-feeder metadata (`fedFromNodeId`, breaker-boundary flag, feeder distance, path hops) alongside the existing electrical source ID, propagated voltage, and breaker-boundary display provenance.
+  - `usePowerFlow` now exposes `fedFromNodeIdByNodeId`; the older `displaySourceNodeIdsByNodeId` output remains available only as a parallel provenance/debug map and no longer drives node-card text.
+- Unresolved items at phase end:
+  - Multi-feed nodes intentionally collapse to one preferred `Fed From` label; there is still no secondary operator cue for the other simultaneous live feeders on the card.
+  - Copy/paste is keyboard-only and app-local; there is still no explicit toolbar action or external clipboard exchange format.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
@@ -487,14 +503,17 @@
 - Latest working-tree summary:
   - Expanded the shared properties modal from a switchboard / UPS-focused editor into a broader node editor covering source online state, sync groups, transfer active source, and descriptive/rating metadata across the current node lineup.
   - Canonical node normalization now preserves `ratedCurrentAmps` on MVSG, load, transfer-switch, and mechanical gear, while descriptive class fields fall back cleanly when operators clear them.
-  - Added a parallel `displaySourceNodeIdsByNodeId` engine output so the canvas can show nearest breaker-fed upstream node labels without changing the root-source propagation used for live/backfeed/conflict evaluation.
+  - Replaced node-card `Sources` text with a single `Fed From` label driven by preferred live-feeder provenance and live label remapping, while leaving electrical source aggregation untouched.
+  - Added app-local keyboard copy/paste for selected subgraphs, including internal-edge filtering, cursor-anchored paste placement, grid-snapped geometry, and preserved edge midpoint routing.
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
   - Queue-based packet propagation over dynamically built adjacency from the current canvas graph.
-  - Each packet now carries `{ sourceId, voltage, displaySourceNodeId }`, so electrical state and breaker-boundary display provenance can be evaluated in one memoized traversal pass.
+  - Each packet now carries `{ sourceId, voltage, displaySourceNodeId, fedFromNodeId, hasBreakerBoundary, fedFromDistance, pathHopCount }`, so electrical state, breaker-boundary provenance, and preferred operator-facing feeder attribution can be evaluated in one memoized traversal pass.
   - Conductive edges are added to adjacency only after edge-type and ATS-handle evaluation: `breaker` edges must be `closed`, while `standard` wires conduct unless an ATS interlock blocks that branch.
-  - Display-source attribution is independent from electrical source attribution: crossing a closed breaker resets the packet display boundary to the current node, while standard wires and internal PTX / ATS / UPS conduction preserve the last breaker boundary.
+  - Display-source attribution remains independent from electrical source attribution: crossing a closed breaker resets the packet display boundary to the current node, while standard wires and internal PTX / ATS / UPS conduction preserve the last breaker boundary.
+  - `Fed From` attribution is a second parallel operator-facing layer: breakers set the feeder to the breaker-side node, wires before any breaker boundary reset to the nearest upstream node, wires after a breaker boundary preserve that feeder, and PTX / ATS / UPS internal conduction preserve the current feeder candidate.
+  - Each node resolves one preferred `fedFromNodeId` by shortest feeder distance first, shortest overall energized path second, and lexical node-id tie-break third.
 - Voltage handling:
   - Root sources inject their own `nominalVoltage` into the traversal when online.
   - Non-transformer nodes conduct packets unchanged and mark `Voltage Fault` whenever any incoming packet voltage differs from their `nominalVoltage`.
@@ -527,7 +546,7 @@
 - Topology key includes node identity/type plus root-source online signatures, normalized root sync-group signatures, and transfer-switch `activeSource`.
 - Topology key also includes UPS `operatingMode`, UPS `batteryAvailable`, and UPS `syncGroup`, plus any source/target handle differences such as switchboard top-vs-bottom landings.
 - Topology key includes edge type, source/target, source-handle/target-handle IDs, and breaker state (`open`, `closed`, `tripped`) where applicable.
-- Position-only drags, manual midpoint reroutes, and label-only renames do not invalidate traversal cache; display-source labels are remapped at render time from live node labels instead.
+- Position-only drags, manual midpoint reroutes, and label-only renames do not invalidate traversal cache; `Fed From` labels are remapped at render time from live node labels instead.
 
 ### Locked Behavioral Contracts for Implementers
 - Topology source of truth is always live React Flow `nodes`/`edges`; no hardcoded adjacency is permitted.
@@ -536,12 +555,12 @@
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
 - Persistence contract is now `{ nodes, edges, mopSteps, mopBaseSnapshot }` with backward-compatible shallow import validation at the top-level graph shape.
 - Manual edge routing metadata is view-only and must stay isolated under `edge.pathOptions.centerX` / `centerY`; it must never alter conductivity, topology extraction, or breaker semantics.
-- `usePowerFlow` now returns `displaySourceNodeIdsByNodeId` and `faultedEdgeIds` in addition to node/edge power maps.
+- `usePowerFlow` now returns `displaySourceNodeIdsByNodeId`, `fedFromNodeIdByNodeId`, and `faultedEdgeIds` in addition to node/edge power maps.
 - Canonical voltage metadata must remain numeric in volts: standard gear uses `nominalVoltage`, while PTXs use `primaryVoltage` and `secondaryVoltage`.
-- Voltage-aware traversal packets must preserve `sourceId`, propagated voltage, and breaker-boundary display provenance all the way through memoized evaluation.
+- Voltage-aware traversal packets must preserve `sourceId`, propagated voltage, breaker-boundary display provenance, and preferred `Fed From` metadata all the way through memoized evaluation.
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
 - Healthy paralleling requires a shared non-empty normalized sync group across all contributing root sources.
-- Canvas `Sources:` readouts must use breaker-boundary display provenance mapped through current node labels, not raw root source IDs.
+- Canvas `Fed From:` readouts must use `fedFromNodeIdByNodeId` mapped through current node labels; `displaySourceNodeIdsByNodeId` is now provenance/debug output only and must not drive the operator-facing card label.
 - PTX handle semantics are deterministic: `ptx-bus-in` and `ptx-bus-loop-target` are primary targets, `ptx-bus-in-source` and `ptx-bus-loop` are primary MV sources, and `ptx-bus-out` remains the stepped secondary source.
 - PTX rendering must expose only two visible top-edge operator terminals even though four logical primary handles exist internally for strict source/target connectivity.
 - PTX conduction is side-aware and idealized: matched primary or secondary arrivals energize the internal primary bus, any primary-side edge tied to that bus can then conduct for compatibility, matched primary paths still transform to `secondaryVoltage`, matched secondary paths still step back up to `primaryVoltage`, and mismatched arrivals block that direction.
@@ -555,6 +574,7 @@
 - SCADA panel must remain a pure UI controller and must not implement or duplicate physics calculations.
 - MOP playback must remain a canonical state-overwrite layer on top of React Flow state; it must not simulate clicks or fork the power engine.
 - MOP actions now include ATS throws, UPS mode throws, plus explicit node/edge delete keyframes in addition to source toggles and breaker toggles.
+- Canvas copy/paste must duplicate only selected nodes plus edges whose endpoints both remain inside the copied node set; pasted ids must regenerate, labels stay verbatim, and pasted geometry must snap back to the shared `24px` grid.
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
 - Sync groups still model source identity only; there is no phase-angle, frequency, or breaker permissive-window simulation beyond the new node/PTX voltage matching rules.
@@ -575,19 +595,23 @@
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 - `npm run check:deps` currently assumes a clean `node_modules`; Vite temp directories such as `.vite` and `.vite-temp` can trigger false-positive extraneous-package failures after normal dev/build/test activity.
 - Visual delete controls, grid-snapped layout ergonomics, edge midpoint dragging, and connection draw-mode workflows are now present, but there is still no automated UI coverage for these operator paths.
+- Multi-feed nodes now intentionally collapse to one preferred `Fed From` label, but there is still no secondary card-level cue for the other simultaneous live feeders.
+- Copy/paste is app-local and keyboard-driven only; there is still no toolbar affordance, no external clipboard serialization contract, and no undo stack beyond browser refresh/local persistence.
 
-## Engine Verification and Test Coverage Snapshot
+## Engine and Clipboard Test Coverage Snapshot
 
 ### Existing Engine Test Coverage (`src/engine/powerFlow.test.js`)
 - Continuity and topology-key behavior for open/closed breaker paths.
 - Standard-wire continuity, mixed breaker/wire corridors, and edge-type topology-key invalidation.
-- Breaker-boundary display-source attribution, including breaker-then-wire inheritance, downstream-breaker boundary reset, direct-wire `Sources: None`, PTX secondary downstream attribution, and multi-feed display-source aggregation.
+- Breaker-boundary display-source attribution, including breaker-then-wire inheritance, downstream-breaker boundary reset, direct-wire empty display provenance, PTX secondary downstream attribution, and multi-feed display-source aggregation.
+- Operator-facing `Fed From` attribution, including breaker-fed inheritance, wire-only nearest-upstream selection, PTX / ATS / UPS pass-through preservation, preferred-feeder collapse on multi-feed corridors, lexical tie resolution, and backfed-source provenance.
 - Source aggregation with explicit assertions for `Backfeed` and `Phase Conflict`.
 - Sync-group-aware conflict resolution for same-group parallel, blank/mixed-group conflict, and normalization behavior.
 - Edge power-state mapping (`de-energized`, `energized`, `phase-conflict`).
 - Trip-aware breaker behavior (`tripped` treated as non-conductive/de-energized).
 - Fault-hitlist emission (`faultedEdgeIds`) for conflict corridors and non-conflict empty-set checks.
 - Voltage-fault detection for direct MV-to-LV feeds, PTX step-down success paths, PTX primary mismatch firewall behavior, dual-ended PTX primary daisy-chain continuation, opposite-end feeder isolation/conflict behavior, and reverse PTX backfeed across chained primary buses.
+- Clipboard helper coverage (`src/canvas/clipboard.test.js`) now includes selected-subgraph extraction, eligible-edge filtering, id remapping, path-option translation, cursor-anchor placement, grid snapping, and repeated-paste nudging.
 - Generator root propagation, generator-offline behavior, utility+generator tie conflict, and generator topology-key invalidation.
 - Root sync-group topology-key invalidation and label-only cache stability.
 - ATS interlock behavior on both breaker and standard-wire feeders plus end-to-end chain propagation through `generator -> switchboard -> transferSwitch -> mechanical`.

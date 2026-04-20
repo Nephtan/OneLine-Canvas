@@ -282,6 +282,111 @@ describe("evaluatePowerFlow", () => {
     expect(displaySourceNodeIdsByNodeId["swbd-a"]).toEqual(["ptx-a", "ptx-b"]);
   });
 
+  it("uses the nearest upstream breaker boundary as the Fed From value through downstream wires", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a"), switchboardNode("swbd-a")];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      standardEdge("wire-1", "mvsg-a", "swbd-a")
+    ];
+    const { fedFromNodeIdByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(fedFromNodeIdByNodeId["mvsg-a"]).toBe("utility-a");
+    expect(fedFromNodeIdByNodeId["swbd-a"]).toBe("utility-a");
+  });
+
+  it("uses the nearest upstream node as Fed From across a wire-only chain", () => {
+    const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a"), switchboardNode("swbd-a")];
+    const edges = [
+      standardEdge("wire-1", "utility-a", "mvsg-a"),
+      standardEdge("wire-2", "mvsg-a", "swbd-a")
+    ];
+    const { fedFromNodeIdByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(fedFromNodeIdByNodeId["mvsg-a"]).toBe("utility-a");
+    expect(fedFromNodeIdByNodeId["swbd-a"]).toBe("mvsg-a");
+  });
+
+  it("preserves the active Fed From candidate through PTX, ATS, and UPS pass-through", () => {
+    const nodes = [
+      utilityNode("utility-a", { nominalVoltage: DEFAULT_MEDIUM_VOLTAGE }),
+      ptxNode("ptx-a"),
+      transferSwitchNode("ats-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      upsNode("ups-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      switchboardNode("swbd-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE })
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "ptx-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFORMER_HANDLE_ID.PRIMARY_IN
+      }),
+      standardEdge("e2", "ptx-a", "ats-a", {
+        sourceHandle: TRANSFORMER_HANDLE_ID.SECONDARY,
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      standardEdge("e3", "ats-a", "ups-a", {
+        sourceHandle: TRANSFER_SWITCH_HANDLE_ID.OUTPUT,
+        targetHandle: UPS_HANDLE_ID.INPUT
+      }),
+      standardEdge("e4", "ups-a", "swbd-a", {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT
+      })
+    ];
+    const { fedFromNodeIdByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(fedFromNodeIdByNodeId["ats-a"]).toBe("utility-a");
+    expect(fedFromNodeIdByNodeId["ups-a"]).toBe("utility-a");
+    expect(fedFromNodeIdByNodeId["swbd-a"]).toBe("utility-a");
+  });
+
+  it("collapses multiple live feeders to the nearest Fed From candidate", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      utilityNode("utility-b", { syncGroup: "GRID-A" }),
+      mvsgNode("mvsg-a"),
+      mvsgNode("mvsg-b")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "utility-b", "mvsg-b", BREAKER_STATE.CLOSED),
+      standardEdge("tie", "mvsg-b", "mvsg-a")
+    ];
+    const { fedFromNodeIdByNodeId, powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(fedFromNodeIdByNodeId["mvsg-a"]).toBe("utility-a");
+  });
+
+  it("resolves equal-distance Fed From ties by lexical node id", () => {
+    const nodes = [
+      utilityNode("utility-a", { syncGroup: "GRID-A" }),
+      utilityNode("utility-b", { syncGroup: "GRID-A" }),
+      mvsgNode("mvsg-a")
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("e2", "utility-b", "mvsg-a", BREAKER_STATE.CLOSED)
+    ];
+    const { fedFromNodeIdByNodeId, powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
+    expect(fedFromNodeIdByNodeId["mvsg-a"]).toBe("utility-a");
+  });
+
+  it("reports the correct Fed From value on a backfed root source", () => {
+    const nodes = [
+      utilityNode("utility-a", { isSourceOnline: false }),
+      generatorNode("gen-a"),
+      mvsgNode("mvsg-a")
+    ];
+    const edges = [
+      breakerEdge("gen-feed", "gen-a", "mvsg-a", BREAKER_STATE.CLOSED),
+      breakerEdge("utility-feed", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED)
+    ];
+    const { fedFromNodeIdByNodeId, powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.BACKFEED);
+    expect(fedFromNodeIdByNodeId["utility-a"]).toBe("mvsg-a");
+  });
+
   it("keeps two independent feeders healthy with an open tie", () => {
     const nodes = [
       utilityNode("utility-a"),

@@ -45,7 +45,7 @@ function FanIcon({ className }) {
 
 function MechanicalNode({ data }) {
   const powerState = data.powerState ?? NODE_POWER_STATE.DEAD;
-  const displaySourceLabels = data.displaySourceLabels ?? [];
+  const fedFromLabel = data.fedFromLabel ?? null;
   const propagatingVoltages = data.propagatingVoltages ?? [];
 
   const shellClassName =
@@ -145,7 +145,7 @@ function MechanicalNode({ data }) {
         {powerState}
       </div>
       <div className="mt-1 text-[10px] text-slate-400">
-        Sources: {displaySourceLabels.length > 0 ? displaySourceLabels.join(", ") : "None"}
+        Fed From: {fedFromLabel ?? "None"}
       </div>
       <div className="mt-1 text-[10px] text-slate-400">
         Voltages:{" "}

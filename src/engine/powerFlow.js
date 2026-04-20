@@ -241,10 +241,18 @@ function getNodeVoltageSignature(node) {
   return String(getNodeNominalVoltage(node));
 }
 
-function createPacketKey(nodeId, arrivalSide, sourceId, voltage, displaySourceNodeId) {
+function createPacketKey(
+  nodeId,
+  arrivalSide,
+  sourceId,
+  voltage,
+  displaySourceNodeId,
+  fedFromNodeId,
+  hasBreakerBoundary
+) {
   return `${nodeId}|${arrivalSide ?? "bus"}|${sourceId}|${voltage}|${
     displaySourceNodeId ?? "-"
-  }`;
+  }|${fedFromNodeId ?? "-"}|${hasBreakerBoundary ? "1" : "0"}`;
 }
 
 function createArrivalBuckets() {
@@ -279,6 +287,85 @@ function getNextDisplaySourceNodeId(edge, currentNodeId, currentDisplaySourceNod
   return normalizeCanvasEdgeType(edge.type) === EDGE_TYPE.BREAKER
     ? currentNodeId
     : currentDisplaySourceNodeId;
+}
+
+function createFedFromCandidate(
+  nodeId = null,
+  distance = Number.POSITIVE_INFINITY,
+  pathHopCount = Number.POSITIVE_INFINITY
+) {
+  return {
+    nodeId,
+    distance,
+    pathHopCount
+  };
+}
+
+function isBetterFedFromCandidate(nextCandidate, currentCandidate) {
+  if (!nextCandidate?.nodeId) {
+    return false;
+  }
+
+  if (!currentCandidate?.nodeId) {
+    return true;
+  }
+
+  if (nextCandidate.distance !== currentCandidate.distance) {
+    return nextCandidate.distance < currentCandidate.distance;
+  }
+
+  if (nextCandidate.pathHopCount !== currentCandidate.pathHopCount) {
+    return nextCandidate.pathHopCount < currentCandidate.pathHopCount;
+  }
+
+  return nextCandidate.nodeId.localeCompare(currentCandidate.nodeId) < 0;
+}
+
+function isBetterPacketMetrics(nextMetrics, currentMetrics) {
+  if (!currentMetrics) {
+    return true;
+  }
+
+  if (nextMetrics.distance !== currentMetrics.distance) {
+    return nextMetrics.distance < currentMetrics.distance;
+  }
+
+  return nextMetrics.pathHopCount < currentMetrics.pathHopCount;
+}
+
+function getNextFedFromState(
+  edge,
+  currentNodeId,
+  currentFedFromNodeId,
+  hasBreakerBoundary,
+  currentFedFromDistance
+) {
+  const edgeType = normalizeCanvasEdgeType(edge.type);
+
+  if (edgeType === EDGE_TYPE.BREAKER) {
+    return {
+      fedFromNodeId: currentNodeId,
+      hasBreakerBoundary: true,
+      fedFromDistance: 1
+    };
+  }
+
+  if (!hasBreakerBoundary) {
+    return {
+      fedFromNodeId: currentNodeId,
+      hasBreakerBoundary: false,
+      fedFromDistance: 1
+    };
+  }
+
+  return {
+    fedFromNodeId: currentFedFromNodeId ?? currentNodeId,
+    hasBreakerBoundary: true,
+    fedFromDistance:
+      currentFedFromNodeId && Number.isFinite(currentFedFromDistance)
+        ? currentFedFromDistance + 1
+        : 1
+  };
 }
 
 function getTransformerOutgoingTransmissions(node, arrivalSide, voltage) {
@@ -465,6 +552,7 @@ export function evaluatePowerFlow(nodes, edges) {
   const incidentEdgesByNodeId = new Map();
   const sourceSetsByNodeId = new Map();
   const displaySourceSetsByNodeId = new Map();
+  const bestFedFromByNodeId = new Map();
   const voltageSetsByNodeId = new Map();
   const arrivalBucketsByNodeId = new Map();
   const edgeTransmissionSourceIdsByEdgeId = new Map();
@@ -474,6 +562,7 @@ export function evaluatePowerFlow(nodes, edges) {
     incidentEdgesByNodeId.set(nodeId, []);
     sourceSetsByNodeId.set(nodeId, new Set());
     displaySourceSetsByNodeId.set(nodeId, new Set());
+    bestFedFromByNodeId.set(nodeId, createFedFromCandidate());
     voltageSetsByNodeId.set(nodeId, new Set());
     arrivalBucketsByNodeId.set(nodeId, createArrivalBuckets());
   }
@@ -495,28 +584,49 @@ export function evaluatePowerFlow(nodes, edges) {
   }
 
   const packetQueue = [];
-  const seenPacketKeys = new Set();
+  const bestPacketMetricsByKey = new Map();
 
-  function enqueuePacket(nodeId, arrivalSide, sourceId, voltage, displaySourceNodeId) {
+  function enqueuePacket(
+    nodeId,
+    arrivalSide,
+    sourceId,
+    voltage,
+    displaySourceNodeId,
+    fedFromNodeId,
+    hasBreakerBoundary,
+    fedFromDistance,
+    pathHopCount
+  ) {
     const packetKey = createPacketKey(
       nodeId,
       arrivalSide,
       sourceId,
       voltage,
-      displaySourceNodeId
+      displaySourceNodeId,
+      fedFromNodeId,
+      hasBreakerBoundary
     );
+    const nextPacketMetrics = {
+      distance: fedFromDistance,
+      pathHopCount
+    };
+    const bestKnownMetrics = bestPacketMetricsByKey.get(packetKey);
 
-    if (seenPacketKeys.has(packetKey)) {
+    if (!isBetterPacketMetrics(nextPacketMetrics, bestKnownMetrics)) {
       return;
     }
 
-    seenPacketKeys.add(packetKey);
+    bestPacketMetricsByKey.set(packetKey, nextPacketMetrics);
     packetQueue.push({
       nodeId,
       arrivalSide,
       sourceId,
       voltage,
-      displaySourceNodeId
+      displaySourceNodeId,
+      fedFromNodeId,
+      hasBreakerBoundary,
+      fedFromDistance,
+      pathHopCount
     });
   }
 
@@ -528,7 +638,11 @@ export function evaluatePowerFlow(nodes, edges) {
         isUpsBatterySource(node) ? UPS_HANDLE_ID.OUTPUT : null,
         node.id,
         getNodeNominalVoltage(node),
-        null
+        null,
+        null,
+        false,
+        0,
+        0
       );
     });
 
@@ -551,6 +665,22 @@ export function evaluatePowerFlow(nodes, edges) {
       sourceSetsByNodeId.get(packet.nodeId).add(packet.sourceId);
       if (packet.displaySourceNodeId) {
         displaySourceSetsByNodeId.get(packet.nodeId).add(packet.displaySourceNodeId);
+      }
+      if (packet.fedFromNodeId && packet.fedFromNodeId !== packet.nodeId) {
+        const nextFedFromCandidate = createFedFromCandidate(
+          packet.fedFromNodeId,
+          packet.fedFromDistance,
+          packet.pathHopCount
+        );
+
+        if (
+          isBetterFedFromCandidate(
+            nextFedFromCandidate,
+            bestFedFromByNodeId.get(packet.nodeId)
+          )
+        ) {
+          bestFedFromByNodeId.set(packet.nodeId, nextFedFromCandidate);
+        }
       }
       voltageSetsByNodeId.get(packet.nodeId).add(packet.voltage);
       recordArrivalVoltage(
@@ -598,6 +728,13 @@ export function evaluatePowerFlow(nodes, edges) {
             packet.nodeId,
             packet.displaySourceNodeId
           );
+          const nextFedFromState = getNextFedFromState(
+            edge,
+            packet.nodeId,
+            packet.fedFromNodeId,
+            packet.hasBreakerBoundary,
+            packet.fedFromDistance
+          );
 
           edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
           enqueuePacket(
@@ -605,7 +742,11 @@ export function evaluatePowerFlow(nodes, edges) {
             getArrivalSideForNeighbor(edge, neighborNode),
             packet.sourceId,
             outgoingTransmission.outgoingVoltage,
-            nextDisplaySourceNodeId
+            nextDisplaySourceNodeId,
+            nextFedFromState.fedFromNodeId,
+            nextFedFromState.hasBreakerBoundary,
+            nextFedFromState.fedFromDistance,
+            packet.pathHopCount + 1
           );
         }
       }
@@ -639,6 +780,13 @@ export function evaluatePowerFlow(nodes, edges) {
             packet.nodeId,
             packet.displaySourceNodeId
           );
+          const nextFedFromState = getNextFedFromState(
+            edge,
+            packet.nodeId,
+            packet.fedFromNodeId,
+            packet.hasBreakerBoundary,
+            packet.fedFromDistance
+          );
 
           edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
           enqueuePacket(
@@ -646,7 +794,11 @@ export function evaluatePowerFlow(nodes, edges) {
             getArrivalSideForNeighbor(edge, neighborNode),
             packet.sourceId,
             outgoingTransmission.outgoingVoltage,
-            nextDisplaySourceNodeId
+            nextDisplaySourceNodeId,
+            nextFedFromState.fedFromNodeId,
+            nextFedFromState.hasBreakerBoundary,
+            nextFedFromState.fedFromDistance,
+            packet.pathHopCount + 1
           );
         }
       }
@@ -662,6 +814,13 @@ export function evaluatePowerFlow(nodes, edges) {
         packet.nodeId,
         packet.displaySourceNodeId
       );
+      const nextFedFromState = getNextFedFromState(
+        edge,
+        packet.nodeId,
+        packet.fedFromNodeId,
+        packet.hasBreakerBoundary,
+        packet.fedFromDistance
+      );
 
       edgeTransmissionSourceIdsByEdgeId.get(edge.id)?.add(packet.sourceId);
       enqueuePacket(
@@ -669,7 +828,11 @@ export function evaluatePowerFlow(nodes, edges) {
         getArrivalSideForNeighbor(edge, neighborNode),
         packet.sourceId,
         packet.voltage,
-        nextDisplaySourceNodeId
+        nextDisplaySourceNodeId,
+        nextFedFromState.fedFromNodeId,
+        nextFedFromState.hasBreakerBoundary,
+        nextFedFromState.fedFromDistance,
+        packet.pathHopCount + 1
       );
     }
   }
@@ -678,12 +841,14 @@ export function evaluatePowerFlow(nodes, edges) {
   const powerFlagsByNodeId = {};
   const sourceIdsByNodeId = {};
   const displaySourceNodeIdsByNodeId = {};
+  const fedFromNodeIdByNodeId = {};
   const propagatingVoltagesByNodeId = {};
 
   for (const nodeId of nodeIds) {
     const node = nodeById.get(nodeId);
     const sourceSet = sourceSetsByNodeId.get(nodeId);
     const displaySourceSet = displaySourceSetsByNodeId.get(nodeId);
+    const fedFromCandidate = bestFedFromByNodeId.get(nodeId);
     const voltageSet = voltageSetsByNodeId.get(nodeId);
     const sourceIds = Array.from(sourceSet ?? []).sort();
     const displaySourceNodeIds = Array.from(displaySourceSet ?? []).sort();
@@ -692,6 +857,7 @@ export function evaluatePowerFlow(nodes, edges) {
 
     sourceIdsByNodeId[nodeId] = sourceIds;
     displaySourceNodeIdsByNodeId[nodeId] = displaySourceNodeIds;
+    fedFromNodeIdByNodeId[nodeId] = fedFromCandidate?.nodeId ?? null;
     propagatingVoltagesByNodeId[nodeId] = voltageValues;
 
     if (sourceIds.length > 0) {
@@ -767,6 +933,7 @@ export function evaluatePowerFlow(nodes, edges) {
     powerFlagsByNodeId,
     sourceIdsByNodeId,
     displaySourceNodeIdsByNodeId,
+    fedFromNodeIdByNodeId,
     propagatingVoltagesByNodeId,
     adjacencyByNodeId,
     edgePowerStateByEdgeId,

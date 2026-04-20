@@ -46,6 +46,7 @@ import {
   normalizeCanvasEdgeType
 } from "./topology/edgeTypes";
 import { CANVAS_GRID_SIZE, CANVAS_SNAP_GRID } from "./canvas/grid";
+import { createPastedSubgraph, extractSelectedSubgraph } from "./canvas/clipboard";
 
 const nodeTypes = {
   utility: UtilityNode,
@@ -282,6 +283,20 @@ function readGraphStateFromStorage() {
   }
 }
 
+function isEditableEventTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.isContentEditable ||
+    target.closest("[contenteditable='true']") !== null ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
+}
+
 function App() {
   const initialGraph = useMemo(() => readGraphStateFromStorage(), []);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialGraph.nodes);
@@ -301,13 +316,18 @@ function App() {
   const [pendingMopAction, setPendingMopAction] = useState(null);
   const [activePropertiesNodeId, setActivePropertiesNodeId] = useState(null);
   const reactFlowInstanceRef = useRef(null);
+  const canvasPaneRef = useRef(null);
+  const clipboardSnapshotRef = useRef(null);
   const importInputRef = useRef(null);
+  const lastCanvasPointerFlowPositionRef = useRef(null);
+  const lastPasteAnchorKeyRef = useRef(null);
+  const repeatedPasteCountRef = useRef(0);
   const skipNextAutosaveRef = useRef(false);
   const {
     powerStateByNodeId,
     powerFlagsByNodeId,
     sourceIdsByNodeId,
-    displaySourceNodeIdsByNodeId,
+    fedFromNodeIdByNodeId,
     propagatingVoltagesByNodeId,
     edgePowerStateByEdgeId,
     faultedEdgeIds
@@ -833,6 +853,156 @@ function App() {
     [edges, isRecordingMop]
   );
 
+  const captureCanvasPointerPosition = useCallback((clientX, clientY) => {
+    const reactFlowInstance = reactFlowInstanceRef.current;
+
+    if (!reactFlowInstance) {
+      return;
+    }
+
+    lastCanvasPointerFlowPositionRef.current = reactFlowInstance.screenToFlowPosition(
+      { x: clientX, y: clientY },
+      {
+        snapToGrid: true,
+        snapGrid: CANVAS_SNAP_GRID
+      }
+    );
+  }, []);
+
+  const handleCanvasPointerActivity = useCallback(
+    (event) => {
+      captureCanvasPointerPosition(event.clientX, event.clientY);
+    },
+    [captureCanvasPointerPosition]
+  );
+
+  const resolvePasteAnchorPosition = useCallback(() => {
+    if (lastCanvasPointerFlowPositionRef.current) {
+      return lastCanvasPointerFlowPositionRef.current;
+    }
+
+    const reactFlowInstance = reactFlowInstanceRef.current;
+    const canvasPane = canvasPaneRef.current;
+
+    if (!reactFlowInstance || !canvasPane) {
+      return null;
+    }
+
+    const canvasBounds = canvasPane.getBoundingClientRect();
+
+    return reactFlowInstance.screenToFlowPosition(
+      {
+        x: canvasBounds.left + canvasBounds.width / 2,
+        y: canvasBounds.top + canvasBounds.height / 2
+      },
+      {
+        snapToGrid: true,
+        snapGrid: CANVAS_SNAP_GRID
+      }
+    );
+  }, []);
+
+  const copySelectedSubgraph = useCallback(() => {
+    const clipboardSnapshot = extractSelectedSubgraph(nodes, edges);
+
+    if (!clipboardSnapshot) {
+      return false;
+    }
+
+    clipboardSnapshotRef.current = clipboardSnapshot;
+    lastPasteAnchorKeyRef.current = null;
+    repeatedPasteCountRef.current = 0;
+    return true;
+  }, [nodes, edges]);
+
+  const pasteClipboardSubgraph = useCallback(() => {
+    const clipboardSnapshot = clipboardSnapshotRef.current;
+    const pasteAnchorPosition = resolvePasteAnchorPosition();
+
+    if (!clipboardSnapshot || !pasteAnchorPosition) {
+      return false;
+    }
+
+    const pasteAnchorKey = `${pasteAnchorPosition.x}:${pasteAnchorPosition.y}`;
+
+    if (lastPasteAnchorKeyRef.current === pasteAnchorKey) {
+      repeatedPasteCountRef.current += 1;
+    } else {
+      lastPasteAnchorKeyRef.current = pasteAnchorKey;
+      repeatedPasteCountRef.current = 0;
+    }
+
+    const pastedGraph = createPastedSubgraph(clipboardSnapshot, {
+      anchorPosition: pasteAnchorPosition,
+      pasteOffset: {
+        x: repeatedPasteCountRef.current * CANVAS_GRID_SIZE,
+        y: repeatedPasteCountRef.current * CANVAS_GRID_SIZE
+      },
+      snapGrid: CANVAS_SNAP_GRID,
+      createNodeId: (node) => `${node.type}-${crypto.randomUUID()}`,
+      createEdgeId: (edge) => `${edge.type ?? "edge"}-${crypto.randomUUID()}`
+    });
+
+    if (!pastedGraph) {
+      return false;
+    }
+
+    const normalizedPastedGraph = normalizeGraphState(pastedGraph);
+
+    setActivePropertiesNodeId(null);
+    setNodes((currentNodes) =>
+      currentNodes
+        .map((node) => ({
+          ...node,
+          selected: false
+        }))
+        .concat(normalizedPastedGraph.nodes)
+    );
+    setEdges((currentEdges) =>
+      currentEdges
+        .map((edge) => ({
+          ...edge,
+          selected: false
+        }))
+        .concat(normalizedPastedGraph.edges)
+    );
+
+    return true;
+  }, [resolvePasteAnchorPosition, setEdges, setNodes]);
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event) => {
+      if (event.altKey || isEditableEventTarget(event.target)) {
+        return;
+      }
+
+      const normalizedKey = event.key.toLowerCase();
+      const isPrimaryModifierPressed = event.ctrlKey || event.metaKey;
+
+      if (!isPrimaryModifierPressed || (normalizedKey !== "c" && normalizedKey !== "v")) {
+        return;
+      }
+
+      if (normalizedKey === "c") {
+        if (copySelectedSubgraph()) {
+          event.preventDefault();
+        }
+
+        return;
+      }
+
+      if (pasteClipboardSubgraph()) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener("keydown", handleWindowKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleWindowKeyDown);
+    };
+  }, [copySelectedSubgraph, pasteClipboardSubgraph]);
+
   const renderNodes = useMemo(() => {
     const normalizedNodeDataById = new Map(
       nodes.map((node) => [node.id, normalizeNodeData(node)])
@@ -840,13 +1010,8 @@ function App() {
 
     return nodes.map((node) => {
       const normalizedNodeData = normalizedNodeDataById.get(node.id);
-      const displaySourceLabels = Array.from(
-        new Set(
-          (displaySourceNodeIdsByNodeId[node.id] ?? [])
-            .map((displaySourceNodeId) => normalizedNodeDataById.get(displaySourceNodeId)?.label)
-            .filter((label) => typeof label === "string" && label.trim() !== "")
-        )
-      ).sort((leftLabel, rightLabel) => leftLabel.localeCompare(rightLabel));
+      const fedFromNodeId = fedFromNodeIdByNodeId[node.id];
+      const fedFromLabel = normalizedNodeDataById.get(fedFromNodeId)?.label ?? null;
 
       return {
         ...node,
@@ -855,7 +1020,10 @@ function App() {
           powerState: powerStateByNodeId[node.id] ?? "Dead",
           powerFlags: powerFlagsByNodeId[node.id],
           sourceIds: sourceIdsByNodeId[node.id] ?? [],
-          displaySourceLabels,
+          fedFromLabel:
+            typeof fedFromLabel === "string" && fedFromLabel.trim() !== ""
+              ? fedFromLabel
+              : null,
           propagatingVoltages: propagatingVoltagesByNodeId[node.id] ?? [],
           onRenameLabel: (nextLabel) => renameNodeLabel(node.id, nextLabel),
           onToggleSourceOnline:
@@ -885,7 +1053,7 @@ function App() {
     powerStateByNodeId,
     powerFlagsByNodeId,
     sourceIdsByNodeId,
-    displaySourceNodeIdsByNodeId,
+    fedFromNodeIdByNodeId,
     propagatingVoltagesByNodeId,
     renameNodeLabel,
     handleSourceToggleRequest,
@@ -1157,7 +1325,14 @@ function App() {
           onMopStepForward={stepMopPlaybackForward}
         />
 
-        <div className="relative h-full flex-1" onDrop={onDrop} onDragOver={onDragOver}>
+        <div
+          ref={canvasPaneRef}
+          className="relative h-full flex-1"
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onPointerMove={handleCanvasPointerActivity}
+          onPointerDown={handleCanvasPointerActivity}
+        >
           <ReactFlow
             nodes={renderNodes}
             edges={renderEdges}
