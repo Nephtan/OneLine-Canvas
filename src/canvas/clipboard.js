@@ -1,5 +1,5 @@
 import { CANVAS_SNAP_GRID } from "./grid";
-import { normalizeEdgePathOptions } from "../topology/edgePathOptions";
+import { translateEdgePathOptions } from "../topology/edgePathOptions";
 
 function cloneSerializable(value) {
   return JSON.parse(JSON.stringify(value));
@@ -20,20 +20,6 @@ function snapPosition(position, snapGrid = CANVAS_SNAP_GRID) {
     x: snapCoordinate(position.x, stepX),
     y: snapCoordinate(position.y, stepY)
   };
-}
-
-function translateEdgePathOptions(pathOptions, delta, snapGrid) {
-  const normalizedPathOptions = normalizeEdgePathOptions(pathOptions);
-
-  if (!normalizedPathOptions) {
-    return undefined;
-  }
-
-  return normalizeEdgePathOptions({
-    ...normalizedPathOptions,
-    centerX: snapCoordinate(normalizedPathOptions.centerX + delta.x, snapGrid[0]),
-    centerY: snapCoordinate(normalizedPathOptions.centerY + delta.y, snapGrid[1])
-  });
 }
 
 export function extractSelectedSubgraph(nodes, edges) {

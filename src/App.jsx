@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addEdge,
+  applyNodeChanges,
   Background,
   Controls,
   MiniMap,
@@ -45,6 +46,7 @@ import {
   EDGE_TYPE,
   normalizeCanvasEdgeType
 } from "./topology/edgeTypes";
+import { translateEdgesForRigidNodeMove } from "./topology/edgePathOptions";
 import { CANVAS_GRID_SIZE, CANVAS_SNAP_GRID } from "./canvas/grid";
 import { createPastedSubgraph, extractSelectedSubgraph } from "./canvas/clipboard";
 
@@ -297,9 +299,48 @@ function isEditableEventTarget(target) {
   );
 }
 
+function getMovedNodeDeltasById(changes, currentNodes) {
+  if (!Array.isArray(changes) || !Array.isArray(currentNodes) || currentNodes.length === 0) {
+    return new Map();
+  }
+
+  const nodeById = new Map(currentNodes.map((node) => [node.id, node]));
+  const movedNodeDeltasById = new Map();
+
+  changes.forEach((change) => {
+    if (change.type !== "position") {
+      return;
+    }
+
+    const currentNode = nodeById.get(change.id);
+    const nextPosition = change.position ?? change.positionAbsolute;
+
+    if (!currentNode || !nextPosition) {
+      return;
+    }
+
+    const delta = {
+      x: nextPosition.x - currentNode.position.x,
+      y: nextPosition.y - currentNode.position.y
+    };
+
+    if (
+      !Number.isFinite(delta.x) ||
+      !Number.isFinite(delta.y) ||
+      (delta.x === 0 && delta.y === 0)
+    ) {
+      return;
+    }
+
+    movedNodeDeltasById.set(change.id, delta);
+  });
+
+  return movedNodeDeltasById;
+}
+
 function App() {
   const initialGraph = useMemo(() => readGraphStateFromStorage(), []);
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialGraph.nodes);
+  const [nodes, setNodes] = useNodesState(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges);
   const [mopSteps, setMopSteps] = useState(initialGraph.mopSteps);
   const [mopBaseSnapshot, setMopBaseSnapshot] = useState(initialGraph.mopBaseSnapshot);
@@ -319,6 +360,7 @@ function App() {
   const canvasPaneRef = useRef(null);
   const clipboardSnapshotRef = useRef(null);
   const importInputRef = useRef(null);
+  const nodesRef = useRef(initialGraph.nodes);
   const lastCanvasPointerFlowPositionRef = useRef(null);
   const lastPasteAnchorKeyRef = useRef(null);
   const repeatedPasteCountRef = useRef(0);
@@ -333,6 +375,10 @@ function App() {
     faultedEdgeIds
   } =
     usePowerFlow(nodes, edges);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -970,6 +1016,30 @@ function App() {
     return true;
   }, [resolvePasteAnchorPosition, setEdges, setNodes]);
 
+  const handleNodesChange = useCallback(
+    (changes) => {
+      const currentNodes = nodesRef.current;
+      const movedNodeDeltasById = getMovedNodeDeltasById(changes, currentNodes);
+      const nextNodes = applyNodeChanges(changes, currentNodes);
+
+      nodesRef.current = nextNodes;
+      setNodes(nextNodes);
+
+      if (movedNodeDeltasById.size === 0) {
+        return;
+      }
+
+      setEdges((currentEdges) =>
+        translateEdgesForRigidNodeMove(
+          currentEdges,
+          movedNodeDeltasById,
+          CANVAS_SNAP_GRID
+        )
+      );
+    },
+    [setEdges, setNodes]
+  );
+
   useEffect(() => {
     const handleWindowKeyDown = (event) => {
       if (event.altKey || isEditableEventTarget(event.target)) {
@@ -1338,7 +1408,7 @@ function App() {
             edges={renderEdges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
+            onNodesChange={handleNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onEdgeClick={onEdgeClick}

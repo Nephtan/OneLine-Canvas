@@ -28,6 +28,7 @@
 | Working Tree | `working-tree` | `2026-04-20` | `Expand node editability and breaker-based source display` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Implement operator-facing Fed From and canvas copy/paste` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Correct switchboard Fed From precedence with ExampleTopology regression coverage` | Implemented |
+| Working Tree | `working-tree` | `2026-04-20` | `Keep manual edge centers attached during rigid group node moves` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -399,6 +400,21 @@
   - Multi-feed nodes still collapse to one preferred `Fed From` label even when more than one inbound source is healthy.
   - Switchboard bottom-return landings remain electrically valid on the one-bus model, but the UI still offers no secondary cue distinguishing them from the main top feed on the card.
 
+### Working Tree Update: Manual Edge Centers Follow Rigid Group Moves
+- Revision: `working-tree`
+- Date: `2026-04-20`
+- Subject: `Keep manual edge centers attached during rigid group node moves`
+- Major additions:
+  - Replaced the direct React Flow `onNodesChange` pass-through with a custom App-level node-change handler that inspects position changes before applying them.
+  - Added shared edge-path helpers so rigid group node moves and clipboard paste both translate manual `edge.pathOptions.centerX/centerY` through the same normalization and grid-snapping rules.
+  - Added headless helper coverage for rigid subgraph translation, single-endpoint no-op behavior, mismatched-delta no-op behavior, and grid-snapped midpoint translation.
+- Engine-state evolution:
+  - None. Electrical traversal, voltage propagation, and `Fed From` selection are unchanged.
+  - Canvas routing metadata now stays visually attached to a moved subgraph whenever both endpoints of a manually routed edge move by the same delta.
+- Unresolved items at phase end:
+  - Manual midpoint anchors still remain fixed during non-rigid reshapes such as moving only one endpoint, by design.
+  - Automated UI coverage still does not exercise the actual shift-box selection drag path inside React Flow.
+
 ### Maintenance Update: Dependency Inventory
 - Revision: `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0`
 - Date: `2026-04-14`
@@ -522,6 +538,7 @@
   - Replaced node-card `Sources` text with a single `Fed From` label driven by preferred live-feeder provenance and live label remapping, while leaving electrical source aggregation untouched.
   - Refined `Fed From` precedence so switchboard main-input arrivals outrank bottom-return and source-side return corridors, with the CH3 ExampleTopology fixture locked in as a regression guard.
   - Added app-local keyboard copy/paste for selected subgraphs, including internal-edge filtering, cursor-anchored paste placement, grid-snapped geometry, and preserved edge midpoint routing.
+  - Manual breaker and wire midpoint anchors now translate with rigid multi-node drags when both edge endpoints move together, preventing shift-box selection moves from leaving custom edge centers behind.
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
@@ -559,6 +576,7 @@
   - Node and edge deletion now flows through native React Flow `deleteElements()` so topology pruning invalidates the graph naturally without manual dangling-edge cleanup logic.
   - New user-drawn connections always carry an explicit custom edge type (`breaker` or `standard`); React Flow fallback edges are no longer part of the supported topology contract.
   - New node drops, subsequent node drags, and manual edge midpoint reroutes all snap to the shared `24px` grid; legacy saved layouts are preserved until the operator touches them.
+  - Manual edge midpoint anchors now follow rigid subgraph moves when both endpoints of that edge move by the same delta, while single-endpoint reshapes intentionally leave the midpoint fixed.
   - Breaker status pills and standard-wire midpoint grab rails now double as drag handles for rerouting without interfering with breaker toggles or delete controls.
 - Recompute and memoization:
 - Topology key includes node identity/type plus root-source online signatures, normalized root sync-group signatures, and transfer-switch `activeSource`.
@@ -613,7 +631,7 @@
 - PTX current metadata remains intentionally undefined; the repo does not yet model whether transformer current ratings belong on the primary, secondary, or both sides.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 - `npm run check:deps` currently assumes a clean `node_modules`; Vite temp directories such as `.vite` and `.vite-temp` can trigger false-positive extraneous-package failures after normal dev/build/test activity.
-- Visual delete controls, grid-snapped layout ergonomics, edge midpoint dragging, and connection draw-mode workflows are now present, but there is still no automated UI coverage for these operator paths.
+- Visual delete controls, grid-snapped layout ergonomics, rigid group midpoint translation, edge midpoint dragging, and connection draw-mode workflows are now present, but there is still no automated UI coverage for these operator paths.
 - Multi-feed nodes now intentionally collapse to one preferred `Fed From` label, but there is still no secondary card-level cue for the other simultaneous live feeders.
 - Copy/paste is app-local and keyboard-driven only; there is still no toolbar affordance, no external clipboard serialization contract, and no undo stack beyond browser refresh/local persistence.
 

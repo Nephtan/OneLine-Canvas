@@ -43,7 +43,7 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 - [ ] Add tests for any future protection, relay coordination, or breaker rating semantics.
 
 ## UI and Workflow Coverage
-- [ ] Add automated UI coverage for grid snapping, manual edge midpoint routing, delete controls, copy/paste flows, breaker-vs-wire draw mode selection, SCADA actions, and MOP recording or playback flows.
+- [ ] Add automated UI coverage for grid snapping, rigid group node moves with manual edge midpoint translation, delete controls, copy/paste flows, breaker-vs-wire draw mode selection, SCADA actions, and MOP recording or playback flows.
 - [ ] Decide whether manual edge routing needs reset-to-auto controls, richer multi-bend editing, or obstacle-aware autorouting beyond the current single midpoint anchor.
 - [ ] Expand the broader properties modal into bulk-edit workflows, richer device ratings, and edge-property editing so large projects do not require node-by-node metadata entry.
 - [ ] Add UI validation or guided affordances around new multi-landing cases such as switchboard bottom-bus targets so operators can tell when a landing is a return corridor versus the preferred main feed.
