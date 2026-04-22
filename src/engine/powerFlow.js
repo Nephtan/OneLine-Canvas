@@ -7,10 +7,11 @@ import {
 } from "../topology/transferSwitch";
 import {
   EDGE_TYPE,
-  isBreakerEdgeType,
   normalizeCanvasEdgeType
 } from "../topology/edgeTypes";
 import { normalizeVoltageValue } from "../electrical/voltage";
+import { normalizeEdgeData } from "../edges/edgeData";
+import { BREAKER_STATE } from "./protectionModel";
 import {
   TRANSFORMER_HANDLE_ID,
   TRANSFORMER_PRIMARY_HANDLE_IDS,
@@ -28,12 +29,6 @@ import {
   UPS_HANDLE_ID,
   UPS_OPERATING_MODE
 } from "../topology/ups";
-
-export const BREAKER_STATE = {
-  OPEN: "open",
-  CLOSED: "closed",
-  TRIPPED: "tripped"
-};
 
 export const NODE_POWER_STATE = {
   DEAD: "Dead",
@@ -139,12 +134,13 @@ function edgeConductsForTransferSwitches(edge, nodeById) {
   return true;
 }
 
-function isConductiveEdge(edge, nodeById) {
+export function isConductiveEdge(edge, nodeById) {
   const edgeType = normalizeCanvasEdgeType(edge.type);
+  const normalizedEdgeData = normalizeEdgeData(edge);
 
   if (
     edgeType === EDGE_TYPE.BREAKER &&
-    normalizeBreakerState(edge.data?.breakerState) !== BREAKER_STATE.CLOSED
+    normalizedEdgeData.breakerState !== BREAKER_STATE.CLOSED
   ) {
     return false;
   }
@@ -158,18 +154,6 @@ export function normalizeSyncGroup(syncGroup) {
   }
 
   return syncGroup.trim().toUpperCase();
-}
-
-export function normalizeBreakerState(state) {
-  if (state === BREAKER_STATE.CLOSED) {
-    return BREAKER_STATE.CLOSED;
-  }
-
-  if (state === BREAKER_STATE.TRIPPED) {
-    return BREAKER_STATE.TRIPPED;
-  }
-
-  return BREAKER_STATE.OPEN;
 }
 
 function isRootSourceOnline(node) {
@@ -574,18 +558,19 @@ export function createTopologyKey(nodes, edges) {
 
       return `${node.id}:${node.type ?? "default"}:${sourceOnlineSignature}:${syncGroupSignature}:${activeSourceSignature}:${upsModeSignature}:${upsBatterySignature}:${getNodeVoltageSignature(
         node
-      )}`;
+      )}:${node.data?.faultType ?? "-"}`;
     })
     .sort();
 
   const edgeSignature = edges
     .map((edge) => {
       const edgeType = normalizeCanvasEdgeType(edge.type);
+      const normalizedEdgeData = normalizeEdgeData(edge);
       const sourceNode = nodeById.get(edge.source);
       const targetNode = nodeById.get(edge.target);
       const breakerState =
         edgeType === EDGE_TYPE.BREAKER
-          ? normalizeBreakerState(edge.data?.breakerState)
+          ? normalizedEdgeData.breakerState
           : "-";
       const sourceHandleSignature = isUpsNodeType(sourceNode?.type)
         ? normalizeUpsSourceHandle(edge.sourceHandle)
@@ -600,7 +585,7 @@ export function createTopologyKey(nodes, edges) {
             ? TRANSFER_SWITCH_HANDLE_ID.PRIMARY
             : edge.targetHandle
           : "";
-      return `${edgeType}:${edge.source}:${sourceHandleSignature}->${edge.target}:${targetHandleSignature}:${breakerState}`;
+      return `${edgeType}:${edge.source}:${sourceHandleSignature}->${edge.target}:${targetHandleSignature}:${breakerState}:${normalizedEdgeData.deviceKind}:${normalizedEdgeData.protectionMode}:${normalizedEdgeData.lineSide}:${normalizedEdgeData.faultType}`;
     })
     .sort();
 
@@ -917,6 +902,7 @@ export function evaluatePowerFlow(nodes, edges) {
   const powerStateByNodeId = {};
   const powerFlagsByNodeId = {};
   const sourceIdsByNodeId = {};
+  const sourceIdsByEdgeId = {};
   const displaySourceNodeIdsByNodeId = {};
   const fedFromNodeIdByNodeId = {};
   const propagatingVoltagesByNodeId = {};
@@ -957,10 +943,6 @@ export function evaluatePowerFlow(nodes, edges) {
     powerStateByNodeId[nodeId] = resolveDominantPowerState(powerFlags);
   }
 
-  const phaseConflictNodeIdSet = new Set(
-    nodeIds.filter((nodeId) => powerFlagsByNodeId[nodeId]?.hasPhaseConflict)
-  );
-
   const adjacencyByNodeId = {};
 
   for (const [nodeId, neighborSet] of adjacencySets.entries()) {
@@ -968,7 +950,6 @@ export function evaluatePowerFlow(nodes, edges) {
   }
 
   const edgePowerStateByEdgeId = {};
-  const faultedEdgeIdSet = new Set();
 
   for (const edge of edges) {
     if (
@@ -980,17 +961,10 @@ export function evaluatePowerFlow(nodes, edges) {
       continue;
     }
 
-    if (
-      isBreakerEdgeType(edge.type) &&
-      (phaseConflictNodeIdSet.has(edge.source) ||
-        phaseConflictNodeIdSet.has(edge.target))
-    ) {
-      faultedEdgeIdSet.add(edge.id);
-    }
-
     const transmittedSourceIds = Array.from(
       edgeTransmissionSourceIdsByEdgeId.get(edge.id) ?? []
-    );
+    ).sort();
+    sourceIdsByEdgeId[edge.id] = transmittedSourceIds;
 
     if (transmittedSourceIds.length === 0) {
       edgePowerStateByEdgeId[edge.id] = EDGE_POWER_STATE.DE_ENERGIZED;
@@ -1009,11 +983,11 @@ export function evaluatePowerFlow(nodes, edges) {
     powerStateByNodeId,
     powerFlagsByNodeId,
     sourceIdsByNodeId,
+    sourceIdsByEdgeId,
     displaySourceNodeIdsByNodeId,
     fedFromNodeIdByNodeId,
     propagatingVoltagesByNodeId,
     adjacencyByNodeId,
-    edgePowerStateByEdgeId,
-    faultedEdgeIds: Array.from(faultedEdgeIdSet).sort()
+    edgePowerStateByEdgeId
   };
 }

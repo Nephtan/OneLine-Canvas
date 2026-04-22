@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { BREAKER_STATE, NODE_POWER_STATE } from "../engine/powerFlow";
+import { NODE_POWER_STATE } from "../engine/powerFlow";
+import { BREAKER_STATE } from "../engine/protectionModel";
 import { isSourceNodeType, normalizeNodeData } from "../nodes/nodeData";
 import {
   formatUpsOperatingMode,
@@ -40,10 +41,24 @@ function getPowerStateBadgeClassName(powerState) {
   return "border-slate-600 bg-slate-900/90 text-slate-300";
 }
 
+function getFaultStatusBadgeClassName(status) {
+  if (status === "active") {
+    return "border-red-400 bg-red-950/70 text-red-100";
+  }
+
+  if (status === "unprotected") {
+    return "border-orange-400 bg-orange-950/70 text-orange-100";
+  }
+
+  return "border-slate-600 bg-slate-900/90 text-slate-300";
+}
+
 function ScadaPanel({
   nodes,
   edges,
   powerStateByNodeId,
+  faultSummaries,
+  protectionTripEdgeIds,
   onToggleSourceOnline,
   onChangeUpsOperatingMode,
   onResetAllBreakers,
@@ -120,6 +135,64 @@ function ScadaPanel({
         0
       ),
     [edges]
+  );
+
+  const nodeLabelById = useMemo(
+    () =>
+      new Map(nodes.map((node) => [node.id, normalizeNodeData(node).label])),
+    [nodes]
+  );
+
+  const edgeLabelById = useMemo(
+    () =>
+      new Map(
+        edges.map((edge) => {
+          const edgeLabel = `${nodeLabelById.get(edge.source) ?? edge.source} -> ${
+            nodeLabelById.get(edge.target) ?? edge.target
+          }`;
+
+          return [edge.id, edgeLabel];
+        })
+      ),
+    [edges, nodeLabelById]
+  );
+
+  const faultRows = useMemo(
+    () =>
+      (faultSummaries ?? [])
+        .map((faultSummary) => ({
+          id: faultSummary.id,
+          label:
+            faultSummary.targetType === "node"
+              ? nodeLabelById.get(faultSummary.targetId) ?? faultSummary.targetId
+              : faultSummary.targetType === "component"
+                ? faultSummary.targetNodeIds
+                    .map((nodeId) => nodeLabelById.get(nodeId) ?? nodeId)
+                    .slice(0, 3)
+                    .join(" / ")
+              : edgeLabelById.get(faultSummary.targetId) ?? faultSummary.targetId,
+          summary:
+            faultSummary.kind === "phaseConflict"
+              ? "Phase Conflict"
+              : faultSummary.targetType === "edge"
+                ? "Bolted Edge Fault"
+                : "Bolted Node Fault",
+          status: faultSummary.status,
+          clearingLabels:
+            faultSummary.clearingEdgeIds.length > 0
+              ? faultSummary.clearingEdgeIds.map(
+                  (edgeId) => edgeLabelById.get(edgeId) ?? edgeId
+                )
+              : [],
+          sourceCount: faultSummary.sourceIds.length
+        }))
+        .sort((leftFault, rightFault) => leftFault.label.localeCompare(rightFault.label)),
+    [faultSummaries, nodeLabelById, edgeLabelById]
+  );
+
+  const activeFaultCount = useMemo(
+    () => faultRows.filter((faultRow) => faultRow.status === "active").length,
+    [faultRows]
   );
 
   return (
@@ -353,6 +426,70 @@ function ScadaPanel({
         <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">
           Tripped breakers: {trippedBreakerCount}
         </div>
+      </div>
+
+      <div className="mt-3 rounded border border-slate-700 bg-slate-900">
+        <div className="border-b border-slate-700 bg-slate-950/95 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">
+            Protection Desk
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 px-3 py-3 text-[10px] uppercase tracking-[0.16em]">
+          <div className="rounded border border-slate-700 bg-slate-950 px-2 py-2">
+            <div className="text-slate-500">Faults</div>
+            <div className="mt-1 text-base text-red-100">{faultRows.length}</div>
+          </div>
+          <div className="rounded border border-slate-700 bg-slate-950 px-2 py-2">
+            <div className="text-slate-500">Trip Plan</div>
+            <div className="mt-1 text-base text-amber-100">
+              {protectionTripEdgeIds?.length ?? 0}
+            </div>
+          </div>
+        </div>
+        {faultRows.length === 0 ? (
+          <div className="px-3 pb-3 text-xs text-slate-500">
+            No active or isolated faults are present on the yard.
+          </div>
+        ) : (
+          <div className="max-h-56 overflow-y-auto px-3 pb-3">
+            <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+              Active faults: {activeFaultCount}
+            </div>
+            <div className="space-y-2">
+              {faultRows.map((faultRow) => (
+                <div
+                  key={faultRow.id}
+                  className="rounded border border-slate-800 bg-slate-950/80 px-3 py-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs text-slate-100">{faultRow.label}</div>
+                      <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                        {faultRow.summary}
+                      </div>
+                    </div>
+                    <div
+                      className={`inline-flex rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getFaultStatusBadgeClassName(
+                        faultRow.status
+                      )}`}
+                    >
+                      {faultRow.status}
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[10px] text-slate-400">
+                    Sources: {faultRow.sourceCount}
+                  </div>
+                  <div className="mt-1 text-[10px] text-slate-400">
+                    Clearing Devices:{" "}
+                    {faultRow.clearingLabels.length > 0
+                      ? faultRow.clearingLabels.join(", ")
+                      : "None"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded border border-slate-700 bg-slate-900">

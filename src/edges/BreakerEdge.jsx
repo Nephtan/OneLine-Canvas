@@ -1,11 +1,16 @@
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from "@xyflow/react";
 import EdgeCenterControl from "../components/EdgeCenterControl";
 import EdgeDeleteButton from "../components/EdgeDeleteButton";
+import EdgePropertiesButton from "../components/EdgePropertiesButton";
+import {
+  EDGE_POWER_STATE,
+} from "../engine/powerFlow";
 import {
   BREAKER_STATE,
-  EDGE_POWER_STATE,
+  FAULT_TYPE,
+  TRIP_REASON,
   normalizeBreakerState
-} from "../engine/powerFlow";
+} from "../engine/protectionModel";
 import { getManualEdgeCenter } from "../topology/edgePathOptions";
 
 const OPEN_EDGE_STYLE = {
@@ -110,6 +115,11 @@ function BreakerEdge({
         <EdgeCenterControl edgeId={id} labelX={labelX} labelY={labelY}>
           {(dragHandleProps) => (
             <div className="flex items-center gap-2">
+              {data?.faultType === FAULT_TYPE.BOLTED ? (
+                <div className="pointer-events-auto rounded border border-red-400 bg-red-950/85 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-red-100">
+                  FLT
+                </div>
+              ) : null}
               <div
                 {...dragHandleProps}
                 title={`Drag breaker ${id} route`}
@@ -117,6 +127,15 @@ function BreakerEdge({
               >
                 {edgeLabel}
               </div>
+              {data?.tripReason === TRIP_REASON.PROTECTION ? (
+                <div className="pointer-events-auto rounded border border-red-500/80 bg-red-950/90 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-red-100">
+                  Auto
+                </div>
+              ) : null}
+              <EdgePropertiesButton
+                title={`Edit breaker ${id} properties`}
+                onOpen={data?.onOpenProperties}
+              />
               <EdgeDeleteButton
                 title={`Delete breaker ${id}`}
                 onDelete={data?.onDeleteEdge}

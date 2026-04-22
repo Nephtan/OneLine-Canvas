@@ -1,7 +1,9 @@
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from "@xyflow/react";
 import EdgeCenterControl from "../components/EdgeCenterControl";
 import EdgeDeleteButton from "../components/EdgeDeleteButton";
+import EdgePropertiesButton from "../components/EdgePropertiesButton";
 import { EDGE_POWER_STATE } from "../engine/powerFlow";
+import { FAULT_TYPE } from "../engine/protectionModel";
 import { getManualEdgeCenter } from "../topology/edgePathOptions";
 
 const STANDARD_DE_ENERGIZED_EDGE_STYLE = {
@@ -66,6 +68,11 @@ function StandardEdge({
         <EdgeCenterControl edgeId={id} labelX={labelX} labelY={labelY}>
           {(dragHandleProps) => (
             <div className="flex items-center gap-2">
+              {data?.faultType === FAULT_TYPE.BOLTED ? (
+                <div className="pointer-events-auto rounded border border-red-400 bg-red-950/85 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-red-100">
+                  FLT
+                </div>
+              ) : null}
               <div
                 {...dragHandleProps}
                 title={`Drag wire ${id} route`}
@@ -73,6 +80,10 @@ function StandardEdge({
               >
                 <span className="h-1.5 w-6 rounded-full bg-cyan-200/80" />
               </div>
+              <EdgePropertiesButton
+                title={`Edit wire ${id} properties`}
+                onOpen={data?.onOpenProperties}
+              />
               <EdgeDeleteButton
                 title={`Delete wire ${id}`}
                 onDelete={data?.onDeleteEdge}

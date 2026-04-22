@@ -21,10 +21,13 @@ import UpsNode from "./nodes/UpsNode";
 import MechanicalNode from "./nodes/MechanicalNode";
 import BreakerEdge from "./edges/BreakerEdge";
 import StandardEdge from "./edges/StandardEdge";
+import { getDefaultEdgeData, normalizeEdgeData } from "./edges/edgeData";
 import usePowerFlow from "./hooks/usePowerFlow";
-import { BREAKER_STATE, EDGE_POWER_STATE } from "./engine/powerFlow";
+import { EDGE_POWER_STATE } from "./engine/powerFlow";
+import { BREAKER_STATE, EDGE_DEVICE_KIND, TRIP_REASON } from "./engine/protectionModel";
 import EquipmentPalette, { DRAG_MIME_TYPE } from "./components/EquipmentPalette";
 import ScadaPanel from "./components/ScadaPanel";
+import EdgePropertiesModal from "./components/EdgePropertiesModal";
 import NodePropertiesModal from "./components/NodePropertiesModal";
 import {
   getDefaultNodeData,
@@ -356,6 +359,7 @@ function App() {
   );
   const [pendingMopAction, setPendingMopAction] = useState(null);
   const [activePropertiesNodeId, setActivePropertiesNodeId] = useState(null);
+  const [activePropertiesEdgeId, setActivePropertiesEdgeId] = useState(null);
   const reactFlowInstanceRef = useRef(null);
   const canvasPaneRef = useRef(null);
   const clipboardSnapshotRef = useRef(null);
@@ -372,6 +376,8 @@ function App() {
     fedFromNodeIdByNodeId,
     propagatingVoltagesByNodeId,
     edgePowerStateByEdgeId,
+    faultSummaries,
+    protectionTripEdgeIds,
     faultedEdgeIds
   } =
     usePowerFlow(nodes, edges);
@@ -406,21 +412,23 @@ function App() {
   }, [nodes, edges, mopSteps, mopBaseSnapshot]);
 
   useEffect(() => {
-    if (!faultedEdgeIds || faultedEdgeIds.length === 0) {
+    if (!protectionTripEdgeIds || protectionTripEdgeIds.length === 0) {
       return;
     }
 
-    const faultedEdgeIdSet = new Set(faultedEdgeIds);
+    const protectionTripEdgeIdSet = new Set(protectionTripEdgeIds);
 
     setEdges((currentEdges) => {
       let didTripAnyEdge = false;
 
       const nextEdges = currentEdges.map((edge) => {
-        if (!faultedEdgeIdSet.has(edge.id)) {
+        if (!protectionTripEdgeIdSet.has(edge.id)) {
           return edge;
         }
 
-        if (edge.data?.breakerState !== BREAKER_STATE.CLOSED) {
+        const normalizedEdgeData = normalizeEdgeData(edge);
+
+        if (normalizedEdgeData.breakerState !== BREAKER_STATE.CLOSED) {
           return edge;
         }
 
@@ -429,15 +437,16 @@ function App() {
         return {
           ...edge,
           data: {
-            ...edge.data,
-            breakerState: BREAKER_STATE.TRIPPED
+            ...normalizedEdgeData,
+            breakerState: BREAKER_STATE.TRIPPED,
+            tripReason: TRIP_REASON.PROTECTION
           }
         };
       });
 
       return didTripAnyEdge ? nextEdges : currentEdges;
     });
-  }, [faultedEdgeIds, setEdges]);
+  }, [protectionTripEdgeIds, setEdges]);
 
   useEffect(() => {
     if (!activePropertiesNodeId) {
@@ -450,6 +459,18 @@ function App() {
       setActivePropertiesNodeId(null);
     }
   }, [nodes, activePropertiesNodeId]);
+
+  useEffect(() => {
+    if (!activePropertiesEdgeId) {
+      return;
+    }
+
+    const activeEdgeStillExists = edges.some((edge) => edge.id === activePropertiesEdgeId);
+
+    if (!activeEdgeStillExists) {
+      setActivePropertiesEdgeId(null);
+    }
+  }, [edges, activePropertiesEdgeId]);
 
   useEffect(() => {
     if (!pendingMopAction || !mopBaseSnapshot || faultedEdgeIds.length > 0) {
@@ -587,8 +608,16 @@ function App() {
     setActivePropertiesNodeId(nodeId);
   }, []);
 
+  const openEdgeProperties = useCallback((edgeId) => {
+    setActivePropertiesEdgeId(edgeId);
+  }, []);
+
   const closeNodeProperties = useCallback(() => {
     setActivePropertiesNodeId(null);
+  }, []);
+
+  const closeEdgeProperties = useCallback(() => {
+    setActivePropertiesEdgeId(null);
   }, []);
 
   const applyNodeProperties = useCallback(
@@ -611,6 +640,28 @@ function App() {
       setActivePropertiesNodeId(null);
     },
     [setNodes]
+  );
+
+  const applyEdgeProperties = useCallback(
+    (edgeId, nextProperties) => {
+      setEdges((currentEdges) =>
+        currentEdges.map((currentEdge) => {
+          if (currentEdge.id !== edgeId) {
+            return currentEdge;
+          }
+
+          return {
+            ...currentEdge,
+            data: {
+              ...normalizeEdgeData(currentEdge),
+              ...nextProperties
+            }
+          };
+        })
+      );
+      setActivePropertiesEdgeId(null);
+    },
+    [setEdges]
   );
 
   const changeNodeSyncGroup = useCallback(
@@ -641,18 +692,22 @@ function App() {
   );
 
   const applyBreakerState = useCallback(
-    (edgeId, nextState) => {
+    (edgeId, nextState, nextTripReason = TRIP_REASON.NONE) => {
       setEdges((currentEdges) =>
         currentEdges.map((currentEdge) => {
           if (currentEdge.id !== edgeId) {
             return currentEdge;
           }
 
+          const normalizedEdgeData = normalizeEdgeData(currentEdge);
+
           return {
             ...currentEdge,
             data: {
-              ...currentEdge.data,
-              breakerState: nextState
+              ...normalizedEdgeData,
+              breakerState: nextState,
+              tripReason:
+                nextState === BREAKER_STATE.TRIPPED ? nextTripReason : TRIP_REASON.NONE
             }
           };
         })
@@ -757,7 +812,9 @@ function App() {
       let didResetAnyEdge = false;
 
       const nextEdges = currentEdges.map((edge) => {
-        if (edge.data?.breakerState !== BREAKER_STATE.TRIPPED) {
+        const normalizedEdgeData = normalizeEdgeData(edge);
+
+        if (normalizedEdgeData.breakerState !== BREAKER_STATE.TRIPPED) {
           return edge;
         }
 
@@ -766,8 +823,9 @@ function App() {
         return {
           ...edge,
           data: {
-            ...edge.data,
-            breakerState: BREAKER_STATE.OPEN
+            ...normalizedEdgeData,
+            breakerState: BREAKER_STATE.OPEN,
+            tripReason: TRIP_REASON.NONE
           }
         };
       });
@@ -1139,15 +1197,16 @@ function App() {
       edges.map((edge) => ({
         ...edge,
         data: {
-          ...edge.data,
+          ...normalizeEdgeData(edge),
           powerState:
             edgePowerStateByEdgeId[edge.id] ?? EDGE_POWER_STATE.DE_ENERGIZED,
+          onOpenProperties: () => openEdgeProperties(edge.id),
           onDeleteEdge: () => {
             void handleDeleteEdgeRequest(edge.id);
           }
         }
       })),
-    [edges, edgePowerStateByEdgeId, handleDeleteEdgeRequest]
+    [edges, edgePowerStateByEdgeId, handleDeleteEdgeRequest, openEdgeProperties]
   );
 
   const onConnect = useCallback(
@@ -1158,12 +1217,7 @@ function App() {
           {
             ...connection,
             type: nextEdgeType,
-            data:
-              nextEdgeType === EDGE_TYPE.BREAKER
-                ? {
-                    breakerState: BREAKER_STATE.OPEN
-                  }
-                : {}
+            data: getDefaultEdgeData(nextEdgeType)
           },
           currentEdges
         )
@@ -1227,6 +1281,7 @@ function App() {
         setIsRecordingMop(false);
         setPendingMopAction(null);
         setActivePropertiesNodeId(null);
+        setActivePropertiesEdgeId(null);
         setNodes(normalizedAppState.nodes);
         setEdges(normalizedAppState.edges);
         setMopSteps(normalizedAppState.mopSteps);
@@ -1256,6 +1311,7 @@ function App() {
     setIsRecordingMop(false);
     setPendingMopAction(null);
     setActivePropertiesNodeId(null);
+    setActivePropertiesEdgeId(null);
     setMopSteps([]);
     setMopBaseSnapshot(null);
     setMopPlaybackIndex(0);
@@ -1319,7 +1375,13 @@ function App() {
         return;
       }
 
-      const nextState = getNextBreakerState(edge.data?.breakerState);
+      const normalizedEdgeData = normalizeEdgeData(edge);
+
+      if (normalizedEdgeData.deviceKind !== EDGE_DEVICE_KIND.BREAKER) {
+        return;
+      }
+
+      const nextState = getNextBreakerState(normalizedEdgeData.breakerState);
 
       if (isRecordingMop) {
         setPendingMopAction({
@@ -1336,7 +1398,7 @@ function App() {
         });
       }
 
-      applyBreakerState(edge.id, nextState);
+      applyBreakerState(edge.id, nextState, TRIP_REASON.NONE);
     },
     [isRecordingMop, applyBreakerState]
   );
@@ -1344,12 +1406,7 @@ function App() {
   const defaultEdgeOptions = useMemo(
     () => ({
       type: edgeDrawMode,
-      data:
-        edgeDrawMode === EDGE_TYPE.BREAKER
-          ? {
-              breakerState: BREAKER_STATE.OPEN
-            }
-          : {}
+      data: getDefaultEdgeData(edgeDrawMode)
     }),
     [edgeDrawMode]
   );
@@ -1357,6 +1414,15 @@ function App() {
   const activePropertiesNode = useMemo(
     () => nodes.find((node) => node.id === activePropertiesNodeId) ?? null,
     [nodes, activePropertiesNodeId]
+  );
+  const nodeLabelById = useMemo(
+    () =>
+      new Map(nodes.map((node) => [node.id, normalizeNodeData(node).label])),
+    [nodes]
+  );
+  const activePropertiesEdge = useMemo(
+    () => edges.find((edge) => edge.id === activePropertiesEdgeId) ?? null,
+    [edges, activePropertiesEdgeId]
   );
 
   return (
@@ -1382,6 +1448,8 @@ function App() {
           nodes={nodes}
           edges={edges}
           powerStateByNodeId={powerStateByNodeId}
+          faultSummaries={faultSummaries}
+          protectionTripEdgeIds={protectionTripEdgeIds}
           onToggleSourceOnline={handleSourceToggleRequest}
           onChangeUpsOperatingMode={handleUpsOperatingModeRequest}
           onResetAllBreakers={resetAllTrippedBreakers}
@@ -1446,6 +1514,15 @@ function App() {
           node={activePropertiesNode}
           onApply={applyNodeProperties}
           onClose={closeNodeProperties}
+        />
+      ) : null}
+      {activePropertiesEdge ? (
+        <EdgePropertiesModal
+          edge={activePropertiesEdge}
+          sourceNodeLabel={nodeLabelById.get(activePropertiesEdge.source) ?? activePropertiesEdge.source}
+          targetNodeLabel={nodeLabelById.get(activePropertiesEdge.target) ?? activePropertiesEdge.target}
+          onApply={applyEdgeProperties}
+          onClose={closeEdgeProperties}
         />
       ) : null}
     </div>

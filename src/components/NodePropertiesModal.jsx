@@ -4,6 +4,7 @@ import {
   formatVoltageValue,
   parseVoltageInput
 } from "../electrical/voltage";
+import { FAULT_TYPE, formatFaultType, normalizeFaultType } from "../engine/protectionModel";
 import {
   isSourceNodeType,
   normalizeNodeData
@@ -56,6 +57,29 @@ function stringifyOptionalPositiveInteger(value) {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
+function parseOptionalPositiveNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+
+  if (trimmedValue === "") {
+    return undefined;
+  }
+
+  const numericValue = Number(trimmedValue.replace(/,/g, ""));
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+}
+
+function stringifyOptionalPositiveNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
 function trimTextOrEmpty(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -72,20 +96,28 @@ function buildDraftFromNode(node) {
     return {
       label: normalizedNodeData.label,
       primaryVoltage: String(normalizedNodeData.primaryVoltage),
-      secondaryVoltage: String(normalizedNodeData.secondaryVoltage)
+      secondaryVoltage: String(normalizedNodeData.secondaryVoltage),
+      transformerImpedancePercent: stringifyOptionalPositiveNumber(
+        normalizedNodeData.transformerImpedancePercent
+      ),
+      faultType: normalizedNodeData.faultType ?? FAULT_TYPE.NONE
     };
   }
 
   const baseDraft = {
     label: normalizedNodeData.label,
-    nominalVoltage: String(normalizedNodeData.nominalVoltage)
+    nominalVoltage: String(normalizedNodeData.nominalVoltage),
+    faultType: normalizedNodeData.faultType ?? FAULT_TYPE.NONE
   };
 
   if (isSourceNodeType(node.type)) {
     return {
       ...baseDraft,
       syncGroup: normalizedNodeData.syncGroup ?? "",
-      isSourceOnline: normalizedNodeData.isSourceOnline !== false
+      isSourceOnline: normalizedNodeData.isSourceOnline !== false,
+      availableFaultCurrentAmps: stringifyOptionalPositiveInteger(
+        normalizedNodeData.availableFaultCurrentAmps
+      )
     };
   }
 
@@ -178,7 +210,9 @@ function NumberInputField({
   onChange,
   helperText,
   errorText,
-  optional = false
+  optional = false,
+  min = "1",
+  step = "1"
 }) {
   return (
     <label htmlFor={id} className="block">
@@ -189,8 +223,8 @@ function NumberInputField({
       <input
         id={id}
         type="number"
-        min="1"
-        step="1"
+        min={min}
+        step={step}
         value={value}
         onChange={(event) => {
           onChange(event.target.value);
@@ -305,10 +339,17 @@ function NodePropertiesModal({ node, onApply, onClose }) {
   const ratedCurrentAmps = supportsRatedCurrent
     ? parseOptionalPositiveInteger(draft.ratedCurrentAmps)
     : undefined;
+  const availableFaultCurrentAmps = isSourceNode
+    ? parseOptionalPositiveInteger(draft.availableFaultCurrentAmps)
+    : undefined;
   const kvaRating = isUps ? parseOptionalPositiveInteger(draft.kvaRating) : undefined;
   const batteryRuntimeMinutes = isUps
     ? parseOptionalPositiveInteger(draft.batteryRuntimeMinutes)
     : undefined;
+  const transformerImpedancePercent = isTransformer
+    ? parseOptionalPositiveNumber(draft.transformerImpedancePercent)
+    : undefined;
+  const faultType = normalizeFaultType(draft.faultType);
   const nominalVoltageError =
     !isTransformer && nominalVoltage === null ? "Enter a positive voltage in volts." : "";
   const primaryVoltageError =
@@ -327,6 +368,14 @@ function NodePropertiesModal({ node, onApply, onClose }) {
     isUps && batteryRuntimeMinutes === null
       ? "Enter a positive runtime in minutes or leave blank."
       : "";
+  const availableFaultCurrentAmpsError =
+    isSourceNode && availableFaultCurrentAmps === null
+      ? "Enter a positive available fault current or leave blank."
+      : "";
+  const transformerImpedancePercentError =
+    isTransformer && transformerImpedancePercent === null
+      ? "Enter a positive impedance percentage or leave blank."
+      : "";
 
   const canApply = useMemo(() => {
     if (trimmedLabel === "") {
@@ -334,7 +383,11 @@ function NodePropertiesModal({ node, onApply, onClose }) {
     }
 
     if (isTransformer) {
-      return primaryVoltage !== null && secondaryVoltage !== null;
+      return (
+        primaryVoltage !== null &&
+        secondaryVoltage !== null &&
+        transformerImpedancePercent !== null
+      );
     }
 
     if (nominalVoltage === null) {
@@ -345,6 +398,10 @@ function NodePropertiesModal({ node, onApply, onClose }) {
       return false;
     }
 
+    if (isSourceNode && availableFaultCurrentAmps === null) {
+      return false;
+    }
+
     if (isUps && (kvaRating === null || batteryRuntimeMinutes === null)) {
       return false;
     }
@@ -352,13 +409,16 @@ function NodePropertiesModal({ node, onApply, onClose }) {
     return true;
   }, [
     batteryRuntimeMinutes,
+    availableFaultCurrentAmps,
     isTransformer,
+    isSourceNode,
     isUps,
     kvaRating,
     nominalVoltage,
     primaryVoltage,
     ratedCurrentAmps,
     secondaryVoltage,
+    transformerImpedancePercent,
     trimmedLabel
   ]);
 
@@ -371,19 +431,23 @@ function NodePropertiesModal({ node, onApply, onClose }) {
       onApply?.(node.id, {
         label: trimmedLabel,
         primaryVoltage,
-        secondaryVoltage
+        secondaryVoltage,
+        transformerImpedancePercent,
+        faultType
       });
       return;
     }
 
     const nextProperties = {
       label: trimmedLabel,
-      nominalVoltage
+      nominalVoltage,
+      faultType
     };
 
     if (isSourceNode) {
       nextProperties.syncGroup = trimTextOrEmpty(draft.syncGroup);
       nextProperties.isSourceOnline = draft.isSourceOnline;
+      nextProperties.availableFaultCurrentAmps = availableFaultCurrentAmps;
     }
 
     if (isMvsg) {
@@ -500,6 +564,22 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                 helperText={`Engineering format: ${formatVoltageValue(draft.secondaryVoltage)}`}
                 errorText={secondaryVoltageError}
               />
+              <NumberInputField
+                id="node-properties-transformer-impedance"
+                label="Transformer Impedance (%)"
+                value={draft.transformerImpedancePercent}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    transformerImpedancePercent: nextValue
+                  }));
+                }}
+                helperText="Reserved study input for later fault-current and coordination calculations."
+                errorText={transformerImpedancePercentError}
+                optional
+                min="0.01"
+                step="0.01"
+              />
               <div className="rounded border border-slate-700 bg-slate-950/60 px-3 py-2 text-xs text-slate-300">
                 Ratio Preview:{" "}
                 <span className="text-cyan-100">
@@ -522,6 +602,29 @@ function NodePropertiesModal({ node, onApply, onClose }) {
               errorText={nominalVoltageError}
             />
           )}
+
+          <SelectField
+            id="node-properties-fault-state"
+            label="Fault State"
+            value={draft.faultType}
+            onChange={(nextValue) => {
+              setDraft((currentDraft) => ({
+                ...currentDraft,
+                faultType: nextValue
+              }));
+            }}
+            options={[
+              {
+                value: FAULT_TYPE.NONE,
+                label: formatFaultType(FAULT_TYPE.NONE)
+              },
+              {
+                value: FAULT_TYPE.BOLTED,
+                label: formatFaultType(FAULT_TYPE.BOLTED)
+              }
+            ]}
+            helperText="Inject or clear a persistent node-side bolted fault for the protection solver."
+          />
 
           {isSourceNode ? (
             <>
@@ -549,6 +652,20 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                 }}
                 helperText="Offline sources remain on the canvas but stop seeding the graph."
                 checkboxLabel="Source is online"
+              />
+              <NumberInputField
+                id="node-properties-source-fault-current"
+                label="Available Fault Current (A)"
+                value={draft.availableFaultCurrentAmps}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    availableFaultCurrentAmps: nextValue
+                  }));
+                }}
+                helperText="Reserved source study input for future fault-current and TCC calculations."
+                errorText={availableFaultCurrentAmpsError}
+                optional
               />
             </>
           ) : null}

@@ -29,6 +29,8 @@
 | Working Tree | `working-tree` | `2026-04-20` | `Implement operator-facing Fed From and canvas copy/paste` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Correct switchboard Fed From precedence with ExampleTopology regression coverage` | Implemented |
 | Working Tree | `working-tree` | `2026-04-20` | `Keep manual edge centers attached during rigid group node moves` | Implemented |
+| Working Tree | `working-tree` | `2026-04-22` | `Add hybrid selective protection, bolted faults, and edge properties` | Implemented |
+| Working Tree | `working-tree` | `2026-04-22` | `Restore edge-properties gear access for breakers and wires` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -563,10 +565,12 @@
   - Root fed by synchronized foreign sources without its own source ID resolves to `Backfeed`.
 - Fault precedence and protection:
   - Node render state is derived from flags with strict precedence: `Voltage Fault > Phase Conflict > Backfeed > Live > Dead`.
-  - Breaker auto-trip remains phase-conflict-only and keys off the latent `hasPhaseConflict` flag rather than the dominant rendered node state.
+  - Protective tripping now runs as a second engine pass after power flow, so topology/voltage/source propagation remain decoupled from selective fault clearing.
 - Protection feedback:
-  - Conflict evaluation emits a deterministic fault-hit list of closed breaker edges connected to conflicted nodes.
-  - The hit list is consumed by `App.jsx` to trip breakers and clear active faults in the next recompute.
+  - The protection resolver now emits `faultSummaries`, `protectionTripEdgeIds`, and backward-compatible `faultedEdgeIds`.
+  - Bolted node faults, bolted edge faults, and `Phase Conflict` components all feed the same ideal-selective trip-selection pass.
+  - Phase-conflict clearing now prefers the smallest protective cut set, with a bias toward internal tie devices before root-source mains when either would clear the overlap.
+  - Bolted faults still use explicit line/load orientation on protective edges so backfeed-side faults pick the correct upstream clearing device.
 - SCADA interaction:
   - The control-room panel reads canonical `nodes` and `edges` only.
   - Remote source actuation and breaker reset are App-level state mutations layered on top of the existing engine output.
@@ -591,7 +595,7 @@
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
 - Persistence contract is now `{ nodes, edges, mopSteps, mopBaseSnapshot }` with backward-compatible shallow import validation at the top-level graph shape.
 - Manual edge routing metadata is view-only and must stay isolated under `edge.pathOptions.centerX` / `centerY`; it must never alter conductivity, topology extraction, or breaker semantics.
-- `usePowerFlow` now returns `displaySourceNodeIdsByNodeId`, `fedFromNodeIdByNodeId`, and `faultedEdgeIds` in addition to node/edge power maps.
+- `usePowerFlow` now returns `displaySourceNodeIdsByNodeId`, `fedFromNodeIdByNodeId`, `sourceIdsByEdgeId`, `faultSummaries`, `protectionTripEdgeIds`, and backward-compatible `faultedEdgeIds` in addition to node/edge power maps.
 - Canonical voltage metadata must remain numeric in volts: standard gear uses `nominalVoltage`, while PTXs use `primaryVoltage` and `secondaryVoltage`.
 - Voltage-aware traversal packets must preserve `sourceId`, propagated voltage, breaker-boundary display provenance, and preferred `Fed From` metadata all the way through memoized evaluation.
 - Sync-group comparisons are normalized with `trim().toUpperCase()` inside the engine only; raw UI text is preserved in canonical node state.
@@ -615,8 +619,8 @@
 
 ## Known Bugs and Unhandled Edge Cases (Cumulative)
 - Sync groups still model source identity only; there is no phase-angle, frequency, or breaker permissive-window simulation beyond the new node/PTX voltage matching rules.
-- Protective isolation is coarse-grained: all closed breakers adjacent to conflict nodes trip in the same cycle.
-- Voltage faults are visualized and preserved in engine flags, but they do not yet trigger automatic protective isolation or selective breaker operations.
+- Protective isolation is now ideal-selective rather than coarse node-adjacent tripping, but it still does not perform true fault-current or time-current-curve coordination.
+- Voltage faults are visualized and preserved in engine flags, but they still do not trigger automatic protective isolation in this first selective-protection pass.
 - No relay timing/coordination hierarchy exists (instantaneous trip, no selective delay curves, no lockout sequencing).
 - Big Bus geometry intentionally allows operator-error topologies; no interlock/sequencing logic is enforced.
 - Terminal sinks (`load`, `mechanical`) rely on handle geometry; deeper directionality/protection validation is not implemented.
@@ -662,6 +666,32 @@
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
 - No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
-- No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, delete-button workflows, snap-to-grid layout behavior, midpoint edge rerouting, or the breaker vs solid-wire connection tool.
+- No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, edge-properties/delete-button workflows, snap-to-grid layout behavior, midpoint edge rerouting, or the breaker vs solid-wire connection tool.
 - No dedicated UI tests yet cover UPS mode buttons, switchboard bottom-edge connection hitboxes, or battery-availability editing flows.
 - Automated simulation test execution beyond dependency validation still depends on the current workspace toolchain remaining installed and healthy.
+
+## Working Tree Update: Hybrid Selective Protection and Edge Properties (`2026-04-22`)
+- Major additions:
+  - Added canonical edge protection metadata normalization in `src/edges/edgeData.js` so breakers and wires now persist `lineSide`, `faultType`, `protectionMode`, current/rating placeholders, and future TCC identifiers consistently across create/import/export flows.
+  - Added `src/engine/protection.js` as a second-pass ideal selective protection resolver layered on top of `evaluatePowerFlow`.
+  - Added explicit bolted-fault injection on nodes and edges plus edge-properties editing, SCADA protection visibility, and protection-tagged breaker trips in the React Flow UI.
+  - Repaired the broken example-topology regression import and added new unit coverage for selective branch isolation, main-bus isolation, main-tie-main clearing, backfeed orientation, re-trip behavior, and edge metadata persistence.
+- Current engine state:
+  - `evaluatePowerFlow` remains the pure topology/voltage/source propagation engine and now also exposes `sourceIdsByEdgeId` for downstream protection diagnostics.
+  - `evaluateProtectionState` consumes live nodes/edges plus power-flow output and selects the minimum protective trip set for bolted faults and phase-conflict components.
+  - `App.jsx` consumes `protectionTripEdgeIds` to convert only the selected closed breakers to `tripped`, tagging those trips with `tripReason: "protection"` while preserving the existing operator `open` state and reset flow.
+  - SCADA now exposes persistent fault summaries (`active`, `isolated`, `unprotected`) and the currently selected clearing devices instead of only counting tripped breakers.
+- Known gaps after this working-tree update:
+  - The protection pass is still idealized: no fault-current magnitude, transformer/conductor impedance solving, or TCC timing math is performed yet.
+  - `Phase Conflict` component isolation uses a minimum-edge heuristic with root-source penalties rather than a full protection-study-grade coordination engine.
+  - Voltage faults remain diagnostic-only and can persist after a selective phase-conflict trip if no bolted-fault event is also present.
+
+## Working Tree Update: Edge Properties Gear Access (`2026-04-22`)
+- Major additions:
+  - Repaired `src/components/EdgePropertiesButton.jsx` so the edge-properties gear now opts back into pointer events inside the `EdgeCenterControl` overlay.
+  - Matched the working delete-button interaction contract by adding `pointer-events-auto`, `nopan`, and pointer-down `preventDefault()` so the gear opens the modal without starting a pan, midpoint drag, or breaker toggle.
+- Current engine state:
+  - The power-flow and selective-protection engines are unchanged; this is a React Flow overlay interaction repair only.
+  - `App.jsx` still uses `activePropertiesEdgeId` plus `openEdgeProperties(edge.id)` / `applyEdgeProperties(...)` as the single modal open/save path for breaker and wire metadata edits.
+- Known gaps after this working-tree update:
+  - Edge overlay controls still rely on manual UI verification because the repo does not yet carry automated coverage for edge-properties interactions.

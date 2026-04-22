@@ -1,5 +1,6 @@
 import { useMemo, useRef } from "react";
 import { createTopologyKey, evaluatePowerFlow } from "../engine/powerFlow";
+import { evaluateProtectionState } from "../engine/protection";
 
 function usePowerFlow(nodes, edges) {
   const topologyKey = useMemo(() => createTopologyKey(nodes, edges), [nodes, edges]);
@@ -9,10 +10,13 @@ function usePowerFlow(nodes, edges) {
       powerStateByNodeId: {},
       powerFlagsByNodeId: {},
       sourceIdsByNodeId: {},
+      sourceIdsByEdgeId: {},
       displaySourceNodeIdsByNodeId: {},
       fedFromNodeIdByNodeId: {},
       propagatingVoltagesByNodeId: {},
       edgePowerStateByEdgeId: {},
+      faultSummaries: [],
+      protectionTripEdgeIds: [],
       faultedEdgeIds: [],
       adjacencyByNodeId: {}
     }
@@ -23,7 +27,12 @@ function usePowerFlow(nodes, edges) {
       return cacheRef.current.result;
     }
 
-    const nextResult = evaluatePowerFlow(nodes, edges);
+    const powerFlowResult = evaluatePowerFlow(nodes, edges);
+    const protectionResult = evaluateProtectionState(nodes, edges, powerFlowResult);
+    const nextResult = {
+      ...powerFlowResult,
+      ...protectionResult
+    };
     cacheRef.current = {
       topologyKey,
       result: nextResult

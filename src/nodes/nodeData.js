@@ -16,6 +16,8 @@ import {
   extractVoltagesFromText,
   normalizeVoltageValue
 } from "../electrical/voltage";
+import { FAULT_TYPE, normalizeFaultType } from "../engine/protectionModel";
+import { normalizeEdgeData } from "../edges/edgeData";
 import { isTransformerNodeType } from "../topology/transformer";
 import { normalizeEdgePathOptions } from "../topology/edgePathOptions";
 
@@ -41,32 +43,41 @@ const DEFAULT_NODE_DATA_BY_TYPE = {
     label: `Utility ${labelSuffix}`,
     nominalVoltage: DEFAULT_MEDIUM_VOLTAGE,
     isSourceOnline: true,
-    syncGroup: ""
+    syncGroup: "",
+    faultType: FAULT_TYPE.NONE,
+    availableFaultCurrentAmps: undefined
   }),
   generator: (labelSuffix) => ({
     label: `Generator ${labelSuffix}`,
     nominalVoltage: DEFAULT_MEDIUM_VOLTAGE,
     isSourceOnline: true,
-    syncGroup: ""
+    syncGroup: "",
+    faultType: FAULT_TYPE.NONE,
+    availableFaultCurrentAmps: undefined
   }),
   mvsg: (labelSuffix) => ({
     label: `MVSG ${labelSuffix}`,
-    nominalVoltage: DEFAULT_MEDIUM_VOLTAGE
+    nominalVoltage: DEFAULT_MEDIUM_VOLTAGE,
+    faultType: FAULT_TYPE.NONE
   }),
   ptx: (labelSuffix) => ({
     label: `PTX ${labelSuffix}`,
     primaryVoltage: DEFAULT_MEDIUM_VOLTAGE,
-    secondaryVoltage: DEFAULT_LOW_VOLTAGE
+    secondaryVoltage: DEFAULT_LOW_VOLTAGE,
+    faultType: FAULT_TYPE.NONE,
+    transformerImpedancePercent: undefined
   }),
   load: (labelSuffix) => ({
     label: `Load ${labelSuffix}`,
     nominalVoltage: DEFAULT_LOW_VOLTAGE,
-    loadClass: "Data Hall"
+    loadClass: "Data Hall",
+    faultType: FAULT_TYPE.NONE
   }),
   switchboard: (labelSuffix) => ({
     label: `SWBD ${labelSuffix}`,
     nominalVoltage: DEFAULT_LOW_VOLTAGE,
-    boardClass: "Main Distribution Board"
+    boardClass: "Main Distribution Board",
+    faultType: FAULT_TYPE.NONE
   }),
   ups: (labelSuffix) => ({
     label: `UPS ${labelSuffix}`,
@@ -74,18 +85,21 @@ const DEFAULT_NODE_DATA_BY_TYPE = {
     upsClass: "Double Conversion UPS",
     batteryAvailable: true,
     operatingMode: "normal",
-    syncGroup: ""
+    syncGroup: "",
+    faultType: FAULT_TYPE.NONE
   }),
   transferSwitch: (labelSuffix) => ({
     label: `ATS ${labelSuffix}`,
     nominalVoltage: DEFAULT_LOW_VOLTAGE,
     switchClass: "Automatic Transfer Switch",
-    activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+    activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
+    faultType: FAULT_TYPE.NONE
   }),
   mechanical: (labelSuffix) => ({
     label: `FCW ${labelSuffix}`,
     nominalVoltage: DEFAULT_LOW_VOLTAGE,
-    mechanicalClass: "Fan Coil Wall"
+    mechanicalClass: "Fan Coil Wall",
+    faultType: FAULT_TYPE.NONE
   })
 };
 
@@ -121,6 +135,25 @@ function normalizeTransformerVoltages(currentData, fallbackData) {
 function normalizeOptionalPositiveInteger(value) {
   const normalizedValue = normalizeVoltageValue(value, null);
   return normalizedValue === null ? undefined : normalizedValue;
+}
+
+function normalizeOptionalPositiveNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+
+    if (trimmedValue === "") {
+      return undefined;
+    }
+
+    const numericValue = Number(trimmedValue.replace(/,/g, ""));
+    return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : undefined;
+  }
+
+  return undefined;
 }
 
 function normalizeOptionalTrimmedText(value, fallbackValue) {
@@ -161,11 +194,15 @@ export function normalizeNodeData(node) {
 
   delete nextData.voltage;
   delete nextData.ratio;
+  nextData.faultType = normalizeFaultType(currentData.faultType);
 
   if (isSourceNodeType(node.type)) {
     nextData.syncGroup =
       typeof currentData.syncGroup === "string" ? currentData.syncGroup : "";
     nextData.isSourceOnline = currentData.isSourceOnline !== false;
+    nextData.availableFaultCurrentAmps = normalizeOptionalPositiveInteger(
+      currentData.availableFaultCurrentAmps
+    );
   } else {
     if (isUpsNodeType(node.type)) {
       nextData.syncGroup =
@@ -174,6 +211,7 @@ export function normalizeNodeData(node) {
       delete nextData.syncGroup;
     }
     delete nextData.isSourceOnline;
+    delete nextData.availableFaultCurrentAmps;
   }
 
   if (isTransferSwitchNodeType(node.type)) {
@@ -242,6 +280,14 @@ export function normalizeNodeData(node) {
     );
   }
 
+  if (isTransformerNodeType(node.type)) {
+    nextData.transformerImpedancePercent = normalizeOptionalPositiveNumber(
+      currentData.transformerImpedancePercent
+    );
+  } else {
+    delete nextData.transformerImpedancePercent;
+  }
+
   return nextData;
 }
 
@@ -259,6 +305,7 @@ export function normalizeGraphState(graph) {
       const normalizedEdge = {
         ...edge,
         type: normalizeCanvasEdgeType(edge.type),
+        data: normalizeEdgeData(edge),
         pathOptions: normalizeEdgePathOptions(edge.pathOptions)
       };
 

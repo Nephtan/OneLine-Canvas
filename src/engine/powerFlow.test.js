@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  BREAKER_STATE,
   EDGE_POWER_STATE,
   NODE_POWER_STATE,
   createTopologyKey,
   evaluatePowerFlow
 } from "./powerFlow";
+import { evaluateProtectionState } from "./protection";
+import { BREAKER_STATE } from "./protectionModel";
 import {
   TRANSFER_SWITCH_ACTIVE_SOURCE,
   TRANSFER_SWITCH_HANDLE_ID
@@ -21,7 +22,7 @@ import {
   DEFAULT_MEDIUM_VOLTAGE
 } from "../electrical/voltage";
 import { normalizeGraphState } from "../nodes/nodeData";
-import exampleTopology from "../../ExampleTopology/NTT-CH3-TOPOLOGY.json";
+import exampleTopology from "../../ExampleTopology/EXAMPLE-TOPOLOGY.json";
 
 function utilityNode(id, options = {}) {
   return {
@@ -163,6 +164,15 @@ function standardEdge(id, source, target, handleOptions = {}) {
     target,
     ...handleOptions,
     data: {}
+  };
+}
+
+function evaluateSystemState(nodes, edges) {
+  const powerFlowResult = evaluatePowerFlow(nodes, edges);
+
+  return {
+    ...powerFlowResult,
+    ...evaluateProtectionState(nodes, edges, powerFlowResult)
   };
 }
 
@@ -435,7 +445,7 @@ describe("evaluatePowerFlow", () => {
     expect(fedFromNodeIdByNodeId["swbd-a"]).toBe("ptx-a");
   });
 
-  it("resolves the CH3 301D and 301E switchboards to their PTX feeders in the example topology", () => {
+  it("resolves the 301D and 301E switchboards to their PTX feeders in the example topology", () => {
     const graph = normalizeGraphState(exampleTopology);
     const { fedFromNodeIdByNodeId, powerStateByNodeId } = evaluatePowerFlow(
       graph.nodes,
@@ -444,8 +454,8 @@ describe("evaluatePowerFlow", () => {
     const labelById = new Map(graph.nodes.map((node) => [node.id, node.data.label]));
 
     for (const [switchboardLabel, expectedFedFromLabel] of [
-      ["CH3-MSB-301D", "CH3-PTX-301D"],
-      ["CH3-MSB-301E", "CH3-PTX-301E"]
+      ["MSB-301D", "PTX-301D"],
+      ["MSB-301E", "PTX-301E"]
     ]) {
       const switchboard = getNodeByLabel(graph.nodes, switchboardLabel);
 
@@ -513,7 +523,7 @@ describe("evaluatePowerFlow", () => {
       edgePowerStateByEdgeId,
       faultedEdgeIds,
       sourceIdsByNodeId
-    } = evaluatePowerFlow(nodes, edges);
+    } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["utility-b"]).toBe(NODE_POWER_STATE.LIVE);
@@ -538,11 +548,11 @@ describe("evaluatePowerFlow", () => {
       breakerEdge("e2", "utility-b", "mvsg-b", BREAKER_STATE.CLOSED),
       breakerEdge("tie", "mvsg-a", "mvsg-b", BREAKER_STATE.CLOSED)
     ];
-    const { powerStateByNodeId, faultedEdgeIds } = evaluatePowerFlow(nodes, edges);
+    const { powerStateByNodeId, faultedEdgeIds } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
     expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
-    expect(faultedEdgeIds).toEqual(["e1", "e2", "tie"]);
+    expect(faultedEdgeIds).toEqual(["tie"]);
   });
 
   it("normalizes sync group strings before allowing a parallel tie", () => {
@@ -557,7 +567,7 @@ describe("evaluatePowerFlow", () => {
       breakerEdge("e2", "utility-b", "mvsg-b", BREAKER_STATE.CLOSED),
       breakerEdge("tie", "mvsg-a", "mvsg-b", BREAKER_STATE.CLOSED)
     ];
-    const { powerStateByNodeId, faultedEdgeIds } = evaluatePowerFlow(nodes, edges);
+    const { powerStateByNodeId, faultedEdgeIds } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["utility-b"]).toBe(NODE_POWER_STATE.LIVE);
@@ -612,7 +622,7 @@ describe("evaluatePowerFlow", () => {
     const nodes = [utilityNode("utility-a"), mvsgNode("mvsg-a")];
     const edges = [breakerEdge("trip-edge", "utility-a", "mvsg-a", BREAKER_STATE.TRIPPED)];
     const { powerStateByNodeId, edgePowerStateByEdgeId, faultedEdgeIds } =
-      evaluatePowerFlow(nodes, edges);
+      evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.DEAD);
@@ -620,7 +630,7 @@ describe("evaluatePowerFlow", () => {
     expect(faultedEdgeIds).toEqual([]);
   });
 
-  it("emits faulted edge ids for all closed breakers touching conflict nodes", () => {
+  it("emits faulted edge ids only for the nearest selective clearing device", () => {
     const nodes = [
       utilityNode("utility-a"),
       utilityNode("utility-b"),
@@ -632,11 +642,11 @@ describe("evaluatePowerFlow", () => {
       breakerEdge("e2", "utility-b", "mvsg-b", BREAKER_STATE.CLOSED),
       breakerEdge("tie", "mvsg-a", "mvsg-b", BREAKER_STATE.CLOSED)
     ];
-    const { faultedEdgeIds, powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+    const { faultedEdgeIds, powerStateByNodeId } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
     expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
-    expect(faultedEdgeIds).toEqual(["e1", "e2", "tie"]);
+    expect(faultedEdgeIds).toEqual(["tie"]);
   });
 
   it("never emits open or tripped breakers in faulted edge ids", () => {
@@ -652,7 +662,7 @@ describe("evaluatePowerFlow", () => {
       breakerEdge("open-tie", "mvsg-a", "mvsg-b", BREAKER_STATE.OPEN),
       breakerEdge("tripped-tie", "mvsg-a", "mvsg-b", BREAKER_STATE.TRIPPED)
     ];
-    const { powerStateByNodeId, faultedEdgeIds } = evaluatePowerFlow(nodes, edges);
+    const { powerStateByNodeId, faultedEdgeIds } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["mvsg-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["mvsg-b"]).toBe(NODE_POWER_STATE.LIVE);
@@ -669,7 +679,7 @@ describe("evaluatePowerFlow", () => {
       breakerEdge("e1", "utility-a", "mvsg-a", BREAKER_STATE.CLOSED),
       breakerEdge("e2", "mvsg-a", "load-a", BREAKER_STATE.CLOSED)
     ];
-    const { faultedEdgeIds, powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+    const { faultedEdgeIds, powerStateByNodeId } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(faultedEdgeIds).toEqual([]);
@@ -753,7 +763,7 @@ describe("evaluatePowerFlow", () => {
       powerStateByNodeId,
       propagatingVoltagesByNodeId,
       faultedEdgeIds
-    } = evaluatePowerFlow(nodes, edges);
+    } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.VOLTAGE_FAULT);
@@ -1140,7 +1150,7 @@ describe("evaluatePowerFlow", () => {
       faultedEdgeIds,
       powerFlagsByNodeId,
       powerStateByNodeId
-    } = evaluatePowerFlow(nodes, edges);
+    } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["ptx-b"]).toBe(NODE_POWER_STATE.LIVE);
@@ -1178,7 +1188,7 @@ describe("evaluatePowerFlow", () => {
       faultedEdgeIds,
       powerFlagsByNodeId,
       powerStateByNodeId
-    } = evaluatePowerFlow(nodes, edges);
+    } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["ptx-a"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
     expect(powerStateByNodeId["ptx-b"]).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
@@ -1193,11 +1203,7 @@ describe("evaluatePowerFlow", () => {
     expect(edgePowerStateByEdgeId["right-feed"]).toBe(
       EDGE_POWER_STATE.PHASE_CONFLICT
     );
-    expect(faultedEdgeIds).toEqual([
-      "left-feed",
-      "middle-closed",
-      "right-feed"
-    ]);
+    expect(faultedEdgeIds).toEqual(["middle-closed"]);
   });
 
   it("treats generator as a root source and energizes downstream nodes", () => {
@@ -1280,7 +1286,7 @@ describe("evaluatePowerFlow", () => {
       sourceIdsByNodeId,
       edgePowerStateByEdgeId,
       faultedEdgeIds
-    } = evaluatePowerFlow(nodes, edges);
+    } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
@@ -1327,7 +1333,7 @@ describe("evaluatePowerFlow", () => {
       sourceIdsByNodeId,
       edgePowerStateByEdgeId,
       faultedEdgeIds
-    } = evaluatePowerFlow(nodes, edges);
+    } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
@@ -1371,7 +1377,7 @@ describe("evaluatePowerFlow", () => {
         sourceHandle: TRANSFER_SWITCH_HANDLE_ID.OUTPUT
       })
     ];
-    const { powerStateByNodeId, faultedEdgeIds } = evaluatePowerFlow(nodes, edges);
+    const { powerStateByNodeId, faultedEdgeIds } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
@@ -1411,7 +1417,7 @@ describe("evaluatePowerFlow", () => {
       edgePowerStateByEdgeId,
       sourceIdsByNodeId,
       faultedEdgeIds
-    } = evaluatePowerFlow(nodes, edges);
+    } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["ats-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["fcw-a"]).toBe(NODE_POWER_STATE.LIVE);
@@ -1596,7 +1602,7 @@ describe("evaluatePowerFlow", () => {
         targetHandle: "switchboard-bus-bottom-in"
       })
     ];
-    const { powerStateByNodeId, sourceIdsByNodeId, faultedEdgeIds } = evaluatePowerFlow(
+    const { powerStateByNodeId, sourceIdsByNodeId, faultedEdgeIds } = evaluateSystemState(
       nodes,
       edges
     );
@@ -1664,7 +1670,7 @@ describe("evaluatePowerFlow", () => {
       breakerEdge("e2", "utility-b", "swbd-a", BREAKER_STATE.CLOSED)
     ];
     const { faultedEdgeIds, powerFlagsByNodeId, powerStateByNodeId } =
-      evaluatePowerFlow(nodes, edges);
+      evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.VOLTAGE_FAULT);
     expect(powerFlagsByNodeId["swbd-a"]).toMatchObject({
@@ -1672,7 +1678,7 @@ describe("evaluatePowerFlow", () => {
       hasPhaseConflict: true,
       hasVoltageFault: true
     });
-    expect(faultedEdgeIds).toEqual(["e1", "e2"]);
+    expect(faultedEdgeIds).toEqual(["e1"]);
   });
 
   it("allows a utility and generator with the same sync group to parallel safely", () => {
@@ -1691,7 +1697,7 @@ describe("evaluatePowerFlow", () => {
       powerStateByNodeId,
       edgePowerStateByEdgeId,
       faultedEdgeIds
-    } = evaluatePowerFlow(nodes, edges);
+    } = evaluateSystemState(nodes, edges);
 
     expect(powerStateByNodeId["utility-a"]).toBe(NODE_POWER_STATE.LIVE);
     expect(powerStateByNodeId["gen-a"]).toBe(NODE_POWER_STATE.LIVE);
