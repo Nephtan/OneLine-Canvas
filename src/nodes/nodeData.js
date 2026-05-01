@@ -1,8 +1,12 @@
 import {
   TRANSFER_SWITCH_ACTIVE_SOURCE,
+  TRANSFER_SWITCH_CONTROL_MODE,
   TRANSFER_SWITCH_HANDLE_ID,
+  TRANSFER_SWITCH_RETRANSFER_POLICY,
   isTransferSwitchNodeType,
   normalizeTransferSwitchActiveSource,
+  normalizeTransferSwitchControlMode,
+  normalizeTransferSwitchRetransferPolicy,
   normalizeTransferSwitchTargetHandle
 } from "../topology/transferSwitch";
 import {
@@ -93,6 +97,10 @@ const DEFAULT_NODE_DATA_BY_TYPE = {
     nominalVoltage: DEFAULT_LOW_VOLTAGE,
     switchClass: "Automatic Transfer Switch",
     activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
+    controlMode: TRANSFER_SWITCH_CONTROL_MODE.MANUAL,
+    retransferPolicy: TRANSFER_SWITCH_RETRANSFER_POLICY.MANUAL_RETURN,
+    transferDelaySeconds: 0,
+    retransferDelaySeconds: 0,
     faultType: FAULT_TYPE.NONE
   }),
   mechanical: (labelSuffix) => ({
@@ -135,6 +143,28 @@ function normalizeTransformerVoltages(currentData, fallbackData) {
 function normalizeOptionalPositiveInteger(value) {
   const normalizedValue = normalizeVoltageValue(value, null);
   return normalizedValue === null ? undefined : normalizedValue;
+}
+
+function normalizeNonNegativeInteger(value, fallbackValue = 0) {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return Math.round(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmedValue = value.trim();
+
+    if (trimmedValue === "") {
+      return fallbackValue;
+    }
+
+    const numericValue = Number(trimmedValue.replace(/,/g, ""));
+
+    if (Number.isFinite(numericValue) && numericValue >= 0) {
+      return Math.round(numericValue);
+    }
+  }
+
+  return fallbackValue;
 }
 
 function normalizeOptionalPositiveNumber(value) {
@@ -218,8 +248,26 @@ export function normalizeNodeData(node) {
     nextData.activeSource = normalizeTransferSwitchActiveSource(
       currentData.activeSource
     );
+    nextData.controlMode = normalizeTransferSwitchControlMode(
+      currentData.controlMode
+    );
+    nextData.retransferPolicy = normalizeTransferSwitchRetransferPolicy(
+      currentData.retransferPolicy
+    );
+    nextData.transferDelaySeconds = normalizeNonNegativeInteger(
+      currentData.transferDelaySeconds,
+      fallbackData.transferDelaySeconds
+    );
+    nextData.retransferDelaySeconds = normalizeNonNegativeInteger(
+      currentData.retransferDelaySeconds,
+      fallbackData.retransferDelaySeconds
+    );
   } else {
     delete nextData.activeSource;
+    delete nextData.controlMode;
+    delete nextData.retransferPolicy;
+    delete nextData.transferDelaySeconds;
+    delete nextData.retransferDelaySeconds;
   }
 
   if (node.type === "switchboard") {

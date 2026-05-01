@@ -10,8 +10,10 @@ import {
 import { EDGE_TYPE } from "../topology/edgeTypes";
 import {
   TRANSFER_SWITCH_ACTIVE_SOURCE,
+  TRANSFER_SWITCH_CONTROL_MODE,
   TRANSFER_SWITCH_HANDLE_ID
 } from "../topology/transferSwitch";
+import { TRANSFER_SWITCH_RETRANSFER_POLICY } from "../topology/transferSwitch";
 import { normalizeGraphState } from "../nodes/nodeData";
 import { TRANSFORMER_HANDLE_ID } from "../topology/transformer";
 import { UPS_HANDLE_ID, UPS_OPERATING_MODE } from "../topology/ups";
@@ -57,6 +59,12 @@ const SUPPORTED_FAULT_TYPES = new Set(Object.values(FAULT_TYPE));
 const SUPPORTED_TRIP_REASONS = new Set(Object.values(TRIP_REASON));
 const SUPPORTED_TRANSFER_SWITCH_ACTIVE_SOURCES = new Set(
   Object.values(TRANSFER_SWITCH_ACTIVE_SOURCE)
+);
+const SUPPORTED_TRANSFER_SWITCH_CONTROL_MODES = new Set(
+  Object.values(TRANSFER_SWITCH_CONTROL_MODE)
+);
+const SUPPORTED_TRANSFER_SWITCH_RETRANSFER_POLICIES = new Set(
+  Object.values(TRANSFER_SWITCH_RETRANSFER_POLICY)
 );
 const SUPPORTED_UPS_OPERATING_MODES = new Set(Object.values(UPS_OPERATING_MODE));
 const SUPPORTED_TRANSFORMER_HANDLES = new Set(Object.values(TRANSFORMER_HANDLE_ID));
@@ -156,6 +164,25 @@ function parseOptionalPositiveNumberLike(value) {
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
 }
 
+function parseOptionalNonNegativeIntegerLike(value) {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return Math.round(value);
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+
+  if (trimmedValue === "") {
+    return undefined;
+  }
+
+  const numericValue = Number(trimmedValue.replace(/,/g, ""));
+  return Number.isFinite(numericValue) && numericValue >= 0 ? Math.round(numericValue) : null;
+}
+
 function validateOptionalStringField(value, path, issues, context, issueOptions) {
   if (value !== undefined && typeof value !== "string") {
     pushIssue(issues, context, path, "must be a string when provided.", issueOptions);
@@ -214,6 +241,28 @@ function validateOptionalPositiveNumberField(value, path, issues, context, issue
       context,
       path,
       "must be a positive numeric value when provided.",
+      issueOptions
+    );
+  }
+}
+
+function validateOptionalNonNegativeIntegerField(
+  value,
+  path,
+  issues,
+  context,
+  issueOptions
+) {
+  if (value === undefined) {
+    return;
+  }
+
+  if (parseOptionalNonNegativeIntegerLike(value) === null) {
+    pushIssue(
+      issues,
+      context,
+      path,
+      "must be a non-negative whole-number value when provided.",
       issueOptions
     );
   }
@@ -386,6 +435,36 @@ function validateNodeData(node, nodePath, issues, context, isLegacyPayload) {
       data.activeSource,
       SUPPORTED_TRANSFER_SWITCH_ACTIVE_SOURCES,
       `${dataPath}.activeSource`,
+      issues,
+      context,
+      issueOptions
+    );
+    validateOptionalEnumField(
+      data.controlMode,
+      SUPPORTED_TRANSFER_SWITCH_CONTROL_MODES,
+      `${dataPath}.controlMode`,
+      issues,
+      context,
+      issueOptions
+    );
+    validateOptionalEnumField(
+      data.retransferPolicy,
+      SUPPORTED_TRANSFER_SWITCH_RETRANSFER_POLICIES,
+      `${dataPath}.retransferPolicy`,
+      issues,
+      context,
+      issueOptions
+    );
+    validateOptionalNonNegativeIntegerField(
+      data.transferDelaySeconds,
+      `${dataPath}.transferDelaySeconds`,
+      issues,
+      context,
+      issueOptions
+    );
+    validateOptionalNonNegativeIntegerField(
+      data.retransferDelaySeconds,
+      `${dataPath}.retransferDelaySeconds`,
       issues,
       context,
       issueOptions

@@ -774,3 +774,18 @@
   - The benchmark harness is intentionally advisory only. It provides machine-local regression visibility, not a cross-machine pass/fail budget or historical timing archive.
   - Large-graph coverage is engine-only by design; the repo still lacks DOM-level automation for command-rail interaction, MOP playback, and other operator workflows.
   - ATS automatic source-fail sensing, richer voltage permissives, and full protection-study realism remain future engine work.
+
+## Working Tree Update: ATS Auto-Sensing and Delay Automation (`2026-05-01`)
+- Major additions:
+  - Extended `src/topology/transferSwitch.js`, `src/nodes/nodeData.js`, and `src/persistence/topologyPersistence.js` so transfer switches now carry canonical `controlMode`, `retransferPolicy`, `transferDelaySeconds`, and `retransferDelaySeconds` metadata while remaining backward compatible with schema-v1 payloads and legacy ATS-handle migrations.
+  - Added `evaluateTransferSwitchSense(...)` to `src/engine/powerFlow.js`, plus new engine tests, so each ATS now reports live `primary` and `emergency` sensed states independently of the active throw path without energizing the output by mistake.
+  - Added `src/hooks/transferSwitchAutomation.js` and `src/hooks/useTransferSwitchAutomation.js` as the pure ATS automation controller plus thin React hook wrapper, with Vitest fake-timer coverage for transfer delays, cancellation, manual-return latching, auto-return retransfer, and timer cleanup.
+  - Reworked `src/App.jsx`, `src/nodes/TransferSwitchNode.jsx`, and `src/components/NodePropertiesModal.jsx` so operators can switch ATS devices between Manual and Auto mode, see per-input sensed status and pending throw countdowns, and edit timer/retransfer policy metadata through the existing node UI.
+- Current engine state:
+  - `evaluatePowerFlow(...)` remains the authoritative dynamic graph traversal engine for conductive state only. ATS output conduction is still driven strictly by `activeSource`; the new sensing helper is a separate read-only pass layered on top for automation decisions.
+  - ATS automation now lives in the app/runtime layer, not inside the graph engine: the controller watches sensed input states, schedules real browser timers, revalidates conditions at expiry, and mutates only `transferSwitch.data.activeSource` when the throw is still justified.
+  - `createTopologyKey(...)` remains intentionally unchanged for ATS automation config. Manual or automatic throws still invalidate the memoized power-flow cache through `activeSource`, while mode, policy, and delay edits stay outside the conductive-topology signature.
+- Known gaps after this working-tree update:
+  - ATS automation still models only a preferred-primary two-position device. There is no neutral position, permissive window, break-before-make overlap timing, or richer STS policy surface yet.
+  - Auto ATS throws are operational runtime events only; they do not yet become first-class MOP steps or timeline artifacts.
+  - UI coverage remains engine/controller-first. The repo still lacks DOM-level automation for Transfer Switch node controls, countdown rendering, or modal editing workflows.

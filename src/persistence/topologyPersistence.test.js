@@ -3,8 +3,10 @@ import { EDGE_LINE_SIDE, FAULT_TYPE, PROTECTION_MODE } from "../engine/protectio
 import { EDGE_TYPE } from "../topology/edgeTypes";
 import {
   TRANSFER_SWITCH_ACTIVE_SOURCE,
+  TRANSFER_SWITCH_CONTROL_MODE,
   TRANSFER_SWITCH_HANDLE_ID
 } from "../topology/transferSwitch";
+import { TRANSFER_SWITCH_RETRANSFER_POLICY } from "../topology/transferSwitch";
 import { TRANSFORMER_HANDLE_ID } from "../topology/transformer";
 import { UPS_HANDLE_ID, UPS_OPERATING_MODE } from "../topology/ups";
 import { normalizeGraphState } from "../nodes/nodeData";
@@ -105,6 +107,10 @@ function transferSwitchNode(id, data = {}) {
       nominalVoltage: 480,
       switchClass: "Automatic Transfer Switch",
       activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
+      controlMode: TRANSFER_SWITCH_CONTROL_MODE.MANUAL,
+      retransferPolicy: TRANSFER_SWITCH_RETRANSFER_POLICY.MANUAL_RETURN,
+      transferDelaySeconds: 0,
+      retransferDelaySeconds: 0,
       ...data
     }
   };
@@ -444,6 +450,60 @@ describe("topology persistence validation", () => {
     );
   });
 
+  it("accepts ATS automation defaults and zero-second delays", () => {
+    const payload = createValidVersionedPayload();
+    payload.nodes = payload.nodes.map((node) =>
+      node.id === "ats-a"
+        ? transferSwitchNode("ats-a", {
+            controlMode: TRANSFER_SWITCH_CONTROL_MODE.AUTO,
+            retransferPolicy: TRANSFER_SWITCH_RETRANSFER_POLICY.AUTO_RETURN,
+            transferDelaySeconds: 0,
+            retransferDelaySeconds: 0
+          })
+        : node
+    );
+
+    const validation = validatePersistedAppState(payload);
+    const result = parsePersistedAppState(payload);
+
+    expect(validation.isValid).toBe(true);
+    expect(result.ok).toBe(true);
+    expect(result.appState.nodes.find((node) => node.id === "ats-a").data).toMatchObject({
+      controlMode: TRANSFER_SWITCH_CONTROL_MODE.AUTO,
+      retransferPolicy: TRANSFER_SWITCH_RETRANSFER_POLICY.AUTO_RETURN,
+      transferDelaySeconds: 0,
+      retransferDelaySeconds: 0
+    });
+  });
+
+  it("rejects invalid ATS automation enums and negative or non-numeric delay values", () => {
+    const payload = createValidVersionedPayload();
+    payload.nodes = payload.nodes.map((node) =>
+      node.id === "ats-a"
+        ? transferSwitchNode("ats-a", {
+            controlMode: "bad-mode",
+            retransferPolicy: "bad-policy",
+            transferDelaySeconds: -1,
+            retransferDelaySeconds: "bad"
+          })
+        : node
+    );
+
+    const validation = validatePersistedAppState(payload);
+
+    expect(validation.isValid).toBe(false);
+    expect(validation.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "payload.nodes[5].data.controlMode" }),
+        expect.objectContaining({ path: "payload.nodes[5].data.retransferPolicy" }),
+        expect.objectContaining({ path: "payload.nodes[5].data.transferDelaySeconds" }),
+        expect.objectContaining({
+          path: "payload.nodes[5].data.retransferDelaySeconds"
+        })
+      ])
+    );
+  });
+
   it("rejects invalid PTX, ATS, and UPS handle assignments on schemaVersion 1 payloads", () => {
     const payload = createValidVersionedPayload();
     payload.edges[1].targetHandle = "not-a-transformer-handle";
@@ -503,7 +563,11 @@ describe("topology persistence round-trip", () => {
         switchboardNode("switchboard-a", { ratedCurrentAmps: 4000 }),
         transferSwitchNode("ats-a", {
           ratedCurrentAmps: 1600,
-          activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+          activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
+          controlMode: TRANSFER_SWITCH_CONTROL_MODE.AUTO,
+          retransferPolicy: TRANSFER_SWITCH_RETRANSFER_POLICY.AUTO_RETURN,
+          transferDelaySeconds: 3,
+          retransferDelaySeconds: 15
         }),
         upsNode("ups-a", {
           ratedCurrentAmps: 800,
@@ -605,6 +669,14 @@ describe("topology persistence round-trip", () => {
       expect(nodeById.get("ptx-a").data.transformerImpedancePercent).toBe(5.75);
       expect(nodeById.get("switchboard-a").data.ratedCurrentAmps).toBe(4000);
       expect(nodeById.get("ats-a").data.ratedCurrentAmps).toBe(1600);
+      expect(nodeById.get("ats-a").data.controlMode).toBe(
+        TRANSFER_SWITCH_CONTROL_MODE.AUTO
+      );
+      expect(nodeById.get("ats-a").data.retransferPolicy).toBe(
+        TRANSFER_SWITCH_RETRANSFER_POLICY.AUTO_RETURN
+      );
+      expect(nodeById.get("ats-a").data.transferDelaySeconds).toBe(3);
+      expect(nodeById.get("ats-a").data.retransferDelaySeconds).toBe(15);
       expect(nodeById.get("ups-a").data.ratedCurrentAmps).toBe(800);
       expect(nodeById.get("ups-a").data.kvaRating).toBe(750);
       expect(nodeById.get("ups-a").data.batteryRuntimeMinutes).toBe(15);

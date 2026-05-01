@@ -22,8 +22,8 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 - [ ] Replace the current always-continuous PTX primary daisy-chain bus with explicit operator-controlled MV switch or isolation semantics where S1/S2-style behavior matters.
 
 ## Transfer-Switch Automation
-- [ ] Add automatic ATS source-fail sensing instead of manual source selection only.
-- [ ] Add timer or delay semantics for transfer and retransfer behavior.
+- [x] Add automatic ATS source-fail sensing instead of manual source selection only.
+- [x] Add timer or delay semantics for transfer and retransfer behavior.
 - [ ] Model richer ATS or STS policies such as permissive logic, neutral positions, or non-overlap timing where needed.
 
 ## UPS Modeling

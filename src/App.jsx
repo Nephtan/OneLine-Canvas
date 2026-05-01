@@ -23,6 +23,7 @@ import BreakerEdge from "./edges/BreakerEdge";
 import StandardEdge from "./edges/StandardEdge";
 import { getDefaultEdgeData, normalizeEdgeData } from "./edges/edgeData";
 import usePowerFlow from "./hooks/usePowerFlow";
+import useTransferSwitchAutomation from "./hooks/useTransferSwitchAutomation";
 import { EDGE_POWER_STATE } from "./engine/powerFlow";
 import { BREAKER_STATE, EDGE_DEVICE_KIND, TRIP_REASON } from "./engine/protectionModel";
 import LeftRail, { DRAG_MIME_TYPE } from "./components/LeftRail";
@@ -50,7 +51,9 @@ import {
 } from "./persistence/topologyPersistence";
 import {
   formatTransferSwitchActiveSource,
-  normalizeTransferSwitchActiveSource
+  normalizeTransferSwitchActiveSource,
+  normalizeTransferSwitchControlMode,
+  TRANSFER_SWITCH_CONTROL_MODE
 } from "./topology/transferSwitch";
 import {
   formatUpsOperatingMode,
@@ -295,6 +298,7 @@ function App() {
     sourceIdsByNodeId,
     fedFromNodeIdByNodeId,
     propagatingVoltagesByNodeId,
+    transferSwitchSenseByNodeId,
     edgePowerStateByEdgeId,
     faultSummaries,
     protectionTripEdgeIds,
@@ -459,6 +463,37 @@ function App() {
             data: {
               ...nodeData,
               activeSource: normalizedNextActiveSource
+            }
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
+  const applyTransferSwitchControlMode = useCallback(
+    (nodeId, nextControlMode) => {
+      const normalizedNextControlMode = normalizeTransferSwitchControlMode(
+        nextControlMode
+      );
+
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (node.id !== nodeId || !isTransferSwitchNodeType(node.type)) {
+            return node;
+          }
+
+          const nodeData = normalizeNodeData(node);
+
+          if (nodeData.controlMode === normalizedNextControlMode) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...nodeData,
+              controlMode: normalizedNextControlMode
             }
           };
         })
@@ -675,6 +710,10 @@ function App() {
         nextActiveSource
       );
 
+      if (transferSwitchData.controlMode === TRANSFER_SWITCH_CONTROL_MODE.AUTO) {
+        return;
+      }
+
       if (transferSwitchData.activeSource === normalizedNextActiveSource) {
         return;
       }
@@ -694,6 +733,35 @@ function App() {
     },
     [nodes, isRecordingMop, applyTransferSwitchActiveSource]
   );
+
+  const handleTransferSwitchControlModeRequest = useCallback(
+    (nodeId, nextControlMode) => {
+      const transferSwitchNode = nodes.find((node) => node.id === nodeId);
+
+      if (!transferSwitchNode || !isTransferSwitchNodeType(transferSwitchNode.type)) {
+        return;
+      }
+
+      const transferSwitchData = normalizeNodeData(transferSwitchNode);
+      const normalizedNextControlMode = normalizeTransferSwitchControlMode(
+        nextControlMode
+      );
+
+      if (transferSwitchData.controlMode === normalizedNextControlMode) {
+        return;
+      }
+
+      applyTransferSwitchControlMode(nodeId, normalizedNextControlMode);
+    },
+    [nodes, applyTransferSwitchControlMode]
+  );
+
+  const { pendingByNodeId: transferSwitchAutomationByNodeId } =
+    useTransferSwitchAutomation({
+      nodes,
+      transferSwitchSenseByNodeId,
+      onThrow: applyTransferSwitchActiveSource
+    });
 
   const handleUpsOperatingModeRequest = useCallback(
     (nodeId, nextOperatingMode) => {
@@ -1072,6 +1140,9 @@ function App() {
               ? fedFromLabel
               : null,
           propagatingVoltages: propagatingVoltagesByNodeId[node.id] ?? [],
+          transferSwitchSense: transferSwitchSenseByNodeId[node.id] ?? null,
+          transferSwitchAutomation:
+            transferSwitchAutomationByNodeId[node.id] ?? null,
           onRenameLabel: (nextLabel) => renameNodeLabel(node.id, nextLabel),
           onToggleSourceOnline:
             isSourceNodeType(node.type)
@@ -1083,6 +1154,10 @@ function App() {
           onChangeActiveSource: isTransferSwitchNodeType(node.type)
             ? (nextActiveSource) =>
                 handleTransferSwitchThrowRequest(node.id, nextActiveSource)
+            : undefined,
+          onChangeControlMode: isTransferSwitchNodeType(node.type)
+            ? (nextControlMode) =>
+                handleTransferSwitchControlModeRequest(node.id, nextControlMode)
             : undefined,
           onChangeOperatingMode: isUpsNodeType(node.type)
             ? (nextOperatingMode) =>
@@ -1102,10 +1177,13 @@ function App() {
     sourceIdsByNodeId,
     fedFromNodeIdByNodeId,
     propagatingVoltagesByNodeId,
+    transferSwitchSenseByNodeId,
+    transferSwitchAutomationByNodeId,
     renameNodeLabel,
     handleSourceToggleRequest,
     changeNodeSyncGroup,
     handleTransferSwitchThrowRequest,
+    handleTransferSwitchControlModeRequest,
     handleUpsOperatingModeRequest,
     openNodeProperties,
     handleDeleteNodeRequest

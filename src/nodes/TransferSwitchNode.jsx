@@ -5,9 +5,12 @@ import NodeDeleteButton from "../components/NodeDeleteButton";
 import NodePropertiesButton from "../components/NodePropertiesButton";
 import {
   TRANSFER_SWITCH_ACTIVE_SOURCE,
+  TRANSFER_SWITCH_CONTROL_MODE,
   TRANSFER_SWITCH_HANDLE_ID,
   formatTransferSwitchActiveSource,
-  normalizeTransferSwitchActiveSource
+  formatTransferSwitchControlMode,
+  normalizeTransferSwitchActiveSource,
+  normalizeTransferSwitchControlMode
 } from "../topology/transferSwitch";
 import { formatVoltageValue } from "../electrical/voltage";
 import { getNodeShellClassName, NODE_SIZE_FAMILY } from "./nodeLayout";
@@ -48,15 +51,59 @@ function TransferIcon({ className }) {
   );
 }
 
+function getSenseBadgeClassName(powerState) {
+  if (powerState === NODE_POWER_STATE.VOLTAGE_FAULT) {
+    return "border-purple-400 bg-purple-950/70 text-purple-100";
+  }
+
+  if (powerState === NODE_POWER_STATE.PHASE_CONFLICT) {
+    return "border-red-400 bg-red-950/70 text-red-100";
+  }
+
+  if (powerState === NODE_POWER_STATE.BACKFEED) {
+    return "border-orange-400 bg-orange-950/70 text-orange-100";
+  }
+
+  if (powerState === NODE_POWER_STATE.LIVE) {
+    return "border-emerald-400/80 bg-emerald-500/15 text-emerald-100";
+  }
+
+  return "border-slate-700 bg-slate-950 text-slate-300";
+}
+
+function formatPendingAutomationLabel(pendingAutomation) {
+  if (!pendingAutomation) {
+    return null;
+  }
+
+  const actionLabel =
+    pendingAutomation.kind === "retransfer"
+      ? "Pending Return"
+      : "Pending Transfer";
+
+  return `${actionLabel} to ${formatTransferSwitchActiveSource(
+    pendingAutomation.targetSource
+  )}`;
+}
+
 function TransferSwitchNode({ data }) {
   const powerState = data.powerState ?? NODE_POWER_STATE.DEAD;
   const fedFromLabel = data.fedFromLabel ?? null;
   const propagatingVoltages = data.propagatingVoltages ?? [];
   const activeSource = normalizeTransferSwitchActiveSource(data.activeSource);
+  const controlMode = normalizeTransferSwitchControlMode(data.controlMode);
+  const isAutoMode = controlMode === TRANSFER_SWITCH_CONTROL_MODE.AUTO;
   const isPrimaryActive =
     activeSource === TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY;
   const isEmergencyActive =
     activeSource === TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY;
+  const transferSwitchSense = data.transferSwitchSense ?? {};
+  const primarySenseState =
+    transferSwitchSense.primary?.powerState ?? NODE_POWER_STATE.DEAD;
+  const emergencySenseState =
+    transferSwitchSense.emergency?.powerState ?? NODE_POWER_STATE.DEAD;
+  const pendingAutomation = data.transferSwitchAutomation ?? null;
+  const pendingAutomationLabel = formatPendingAutomationLabel(pendingAutomation);
 
   const shellClassName =
     powerState === NODE_POWER_STATE.VOLTAGE_FAULT
@@ -135,12 +182,24 @@ function TransferSwitchNode({ data }) {
     ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
     : "border-slate-700 bg-slate-950 text-slate-400";
 
+  const modeButtonClassName = (isSelected) =>
+    isSelected
+      ? "border-cyan-300/80 bg-cyan-500/15 text-cyan-100"
+      : "border-slate-700 bg-slate-950 text-slate-400";
+
   const activeSourceLabel = formatTransferSwitchActiveSource(activeSource);
+  const controlModeLabel = formatTransferSwitchControlMode(controlMode);
 
   function handleActiveSourceClick(event, nextActiveSource) {
     event.preventDefault();
     event.stopPropagation();
     data.onChangeActiveSource?.(nextActiveSource);
+  }
+
+  function handleControlModeClick(event, nextControlMode) {
+    event.preventDefault();
+    event.stopPropagation();
+    data.onChangeControlMode?.(nextControlMode);
   }
 
   return (
@@ -177,6 +236,44 @@ function TransferSwitchNode({ data }) {
       <div className="mt-3 rounded border border-slate-800 bg-slate-950/80 px-3 py-3">
         <div className="flex items-center justify-between gap-2">
           <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">
+            Control Mode
+          </div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-300">
+            {controlModeLabel}
+          </div>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={(event) => {
+              handleControlModeClick(event, TRANSFER_SWITCH_CONTROL_MODE.MANUAL);
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${modeButtonClassName(
+              !isAutoMode
+            )}`}
+          >
+            Manual
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              handleControlModeClick(event, TRANSFER_SWITCH_CONTROL_MODE.AUTO);
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${modeButtonClassName(
+              isAutoMode
+            )}`}
+          >
+            Auto
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">
             Active Source
           </div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-slate-300">
@@ -186,6 +283,7 @@ function TransferSwitchNode({ data }) {
         <div className="mt-2 grid grid-cols-2 gap-2">
           <button
             type="button"
+            disabled={isAutoMode}
             onClick={(event) => {
               handleActiveSourceClick(
                 event,
@@ -195,12 +293,17 @@ function TransferSwitchNode({ data }) {
             onPointerDown={(event) => {
               event.stopPropagation();
             }}
-            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${primaryButtonClassName}`}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
+              isAutoMode
+                ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                : primaryButtonClassName
+            }`}
           >
             Primary
           </button>
           <button
             type="button"
+            disabled={isAutoMode}
             onClick={(event) => {
               handleActiveSourceClick(
                 event,
@@ -210,11 +313,47 @@ function TransferSwitchNode({ data }) {
             onPointerDown={(event) => {
               event.stopPropagation();
             }}
-            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${emergencyButtonClassName}`}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
+              isAutoMode
+                ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                : emergencyButtonClassName
+            }`}
           >
             Emergency
           </button>
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded border border-slate-800 bg-slate-950/70 px-2 py-2">
+            <div className="text-[9px] uppercase tracking-[0.16em] text-slate-500">Primary</div>
+            <div
+              className={`mt-2 inline-flex rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getSenseBadgeClassName(
+                primarySenseState
+              )}`}
+            >
+              {primarySenseState}
+            </div>
+          </div>
+          <div className="rounded border border-slate-800 bg-slate-950/70 px-2 py-2">
+            <div className="text-[9px] uppercase tracking-[0.16em] text-slate-500">
+              Emergency
+            </div>
+            <div
+              className={`mt-2 inline-flex rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getSenseBadgeClassName(
+                emergencySenseState
+              )}`}
+            >
+              {emergencySenseState}
+            </div>
+          </div>
+        </div>
+        {pendingAutomationLabel ? (
+          <div className="mt-3 rounded border border-cyan-400/40 bg-cyan-500/10 px-2 py-2 text-[10px] uppercase tracking-[0.16em] text-cyan-100">
+            {pendingAutomationLabel}
+            {pendingAutomation.remainingSeconds > 0
+              ? ` (${pendingAutomation.remainingSeconds}s)`
+              : " (0s)"}
+          </div>
+        ) : null}
         <div className="relative mt-3 h-14">
           <div
             className={`absolute left-[25%] top-0 h-5 w-1 -translate-x-1/2 rounded-full ${

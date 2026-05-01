@@ -21,7 +21,7 @@ This thing is not here to flatter bad assumptions. If you close the wrong tie, p
 
 ## Current Status
 
-OneLine-Canvas is **topology-aware, source-aware, conflict-aware, and nominal-voltage-aware today**. It already handles dynamic graph traversal, backfeed detection, phase-conflict detection, PTX step-down and reverse propagation, ATS source selection, UPS directional behavior, command-rail control, and MOP playback on arbitrary user-built topologies.
+OneLine-Canvas is **topology-aware, source-aware, conflict-aware, and nominal-voltage-aware today**. It already handles dynamic graph traversal, backfeed detection, phase-conflict detection, PTX step-down and reverse propagation, ATS source selection plus automatic source-fail sensing and timed transfer automation, UPS directional behavior, command-rail control, and MOP playback on arbitrary user-built topologies.
 
 It is **not yet a full electrical-physics simulator**. Voltage-aware semantics, transformer behavior beyond metadata and labels, detailed breaker and switch ratings, richer relay coordination, and deeper protection logic are still in progress. If you want the live backlog instead of the cleaned-up sales pitch, read [OUTSTANDING.md](./OUTSTANDING.md).
 
@@ -72,7 +72,7 @@ This starts the local Vite dev server from the repo root.
 npm test
 ```
 
-The current automated suite focuses on the graph traversal and power-flow engine rather than DOM-heavy UI coverage, including deterministic large-graph stress coverage for radial, main-tie-main, and mixed MV/LV corridors.
+The current automated suite focuses on the graph traversal, ATS automation controller, and power-flow engine rather than DOM-heavy UI coverage, including deterministic large-graph stress coverage for radial, main-tie-main, and mixed MV/LV corridors.
 
 ### Run Engine Benchmarks
 
@@ -122,7 +122,7 @@ Use it as a **clean-install validation step**. In the current repo, normal Vite 
 - The engine now enforces nominal-voltage compatibility across mixed 12.47 kV and 480 V corridors, but it still lacks richer voltage windows, permissives, and voltage-fault-to-protection coupling.
 - PTX supports ideal voltage-ratio propagation and primary daisy-chains, but it does not yet model impedance, taps, vector groups, or current-based protection behavior.
 - Breakers and switches do not yet model detailed ratings, permissives, or realistic protection coordination.
-- ATS behavior currently supports manual source selection rather than full sensing, timers, or automatic retransfer policy.
+- ATS behavior now supports manual/auto control mode, source-fail sensing, timed transfer/retransfer, and per-device manual-return vs auto-return policy, but it still lacks richer STS/ATS permissives, neutral positions, and non-overlap timing windows.
 - UI coverage is still behind engine coverage; the deepest automated tests live in `src/engine/powerFlow.test.js` and `src/engine/largeGraphPerformance.test.js`.
 
 For the unabridged list, go straight to [OUTSTANDING.md](./OUTSTANDING.md).

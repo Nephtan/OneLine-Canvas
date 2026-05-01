@@ -12,8 +12,14 @@ import {
 import { isTransformerNodeType } from "../topology/transformer";
 import {
   TRANSFER_SWITCH_ACTIVE_SOURCE,
+  TRANSFER_SWITCH_CONTROL_MODE,
+  TRANSFER_SWITCH_RETRANSFER_POLICY,
   formatTransferSwitchActiveSource,
-  normalizeTransferSwitchActiveSource
+  formatTransferSwitchControlMode,
+  formatTransferSwitchRetransferPolicy,
+  normalizeTransferSwitchActiveSource,
+  normalizeTransferSwitchControlMode,
+  normalizeTransferSwitchRetransferPolicy
 } from "../topology/transferSwitch";
 import {
   formatUpsOperatingMode,
@@ -55,6 +61,31 @@ function parseOptionalPositiveInteger(value) {
 
 function stringifyOptionalPositiveInteger(value) {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function parseNonNegativeInteger(value, fallbackValue = 0) {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return Math.round(value);
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+
+  if (trimmedValue === "") {
+    return fallbackValue;
+  }
+
+  const numericValue = Number(trimmedValue.replace(/,/g, ""));
+  return Number.isFinite(numericValue) && numericValue >= 0 ? Math.round(numericValue) : null;
+}
+
+function stringifyNonNegativeInteger(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? String(value)
+    : "0";
 }
 
 function parseOptionalPositiveNumber(value) {
@@ -149,6 +180,16 @@ function buildDraftFromNode(node) {
       ...baseDraft,
       switchClass: normalizedNodeData.switchClass ?? "",
       activeSource: normalizeTransferSwitchActiveSource(normalizedNodeData.activeSource),
+      controlMode: normalizeTransferSwitchControlMode(normalizedNodeData.controlMode),
+      retransferPolicy: normalizeTransferSwitchRetransferPolicy(
+        normalizedNodeData.retransferPolicy
+      ),
+      transferDelaySeconds: stringifyNonNegativeInteger(
+        normalizedNodeData.transferDelaySeconds
+      ),
+      retransferDelaySeconds: stringifyNonNegativeInteger(
+        normalizedNodeData.retransferDelaySeconds
+      ),
       ratedCurrentAmps: stringifyOptionalPositiveInteger(normalizedNodeData.ratedCurrentAmps)
     };
   }
@@ -275,19 +316,24 @@ function CheckboxField({
   );
 }
 
-function SelectField({ id, label, value, onChange, options, helperText }) {
+function SelectField({ id, label, value, onChange, options, helperText, disabled = false }) {
   return (
     <label htmlFor={id} className="block">
       <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">{label}</div>
       <select
         id={id}
         value={value}
+        disabled={disabled}
         onChange={(event) => {
           onChange(event.target.value);
         }}
         onPointerDown={stopCanvasEvent}
         onKeyDown={stopCanvasEvent}
-        className="nodrag mt-1 w-full rounded border border-slate-600 bg-slate-950/90 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-300/80"
+        className={`nodrag mt-1 w-full rounded border px-3 py-2 text-sm outline-none ${
+          disabled
+            ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-500"
+            : "border-slate-600 bg-slate-950/90 text-slate-100 focus:border-cyan-300/80"
+        }`}
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -346,10 +392,19 @@ function NodePropertiesModal({ node, onApply, onClose }) {
   const batteryRuntimeMinutes = isUps
     ? parseOptionalPositiveInteger(draft.batteryRuntimeMinutes)
     : undefined;
+  const transferDelaySeconds = isTransferSwitch
+    ? parseNonNegativeInteger(draft.transferDelaySeconds)
+    : undefined;
+  const retransferDelaySeconds = isTransferSwitch
+    ? parseNonNegativeInteger(draft.retransferDelaySeconds)
+    : undefined;
   const transformerImpedancePercent = isTransformer
     ? parseOptionalPositiveNumber(draft.transformerImpedancePercent)
     : undefined;
   const faultType = normalizeFaultType(draft.faultType);
+  const transferSwitchControlMode = isTransferSwitch
+    ? normalizeTransferSwitchControlMode(draft.controlMode)
+    : TRANSFER_SWITCH_CONTROL_MODE.MANUAL;
   const nominalVoltageError =
     !isTransformer && nominalVoltage === null ? "Enter a positive voltage in volts." : "";
   const primaryVoltageError =
@@ -367,6 +422,14 @@ function NodePropertiesModal({ node, onApply, onClose }) {
   const batteryRuntimeMinutesError =
     isUps && batteryRuntimeMinutes === null
       ? "Enter a positive runtime in minutes or leave blank."
+      : "";
+  const transferDelaySecondsError =
+    isTransferSwitch && transferDelaySeconds === null
+      ? "Enter a non-negative whole-number delay."
+      : "";
+  const retransferDelaySecondsError =
+    isTransferSwitch && retransferDelaySeconds === null
+      ? "Enter a non-negative whole-number delay."
       : "";
   const availableFaultCurrentAmpsError =
     isSourceNode && availableFaultCurrentAmps === null
@@ -406,6 +469,10 @@ function NodePropertiesModal({ node, onApply, onClose }) {
       return false;
     }
 
+    if (isTransferSwitch && (transferDelaySeconds === null || retransferDelaySeconds === null)) {
+      return false;
+    }
+
     return true;
   }, [
     batteryRuntimeMinutes,
@@ -413,11 +480,14 @@ function NodePropertiesModal({ node, onApply, onClose }) {
     isTransformer,
     isSourceNode,
     isUps,
+    isTransferSwitch,
     kvaRating,
     nominalVoltage,
     primaryVoltage,
     ratedCurrentAmps,
+    retransferDelaySeconds,
     secondaryVoltage,
+    transferDelaySeconds,
     transformerImpedancePercent,
     trimmedLabel
   ]);
@@ -476,6 +546,12 @@ function NodePropertiesModal({ node, onApply, onClose }) {
         normalizedNodeData.switchClass
       );
       nextProperties.activeSource = normalizeTransferSwitchActiveSource(draft.activeSource);
+      nextProperties.controlMode = transferSwitchControlMode;
+      nextProperties.retransferPolicy = normalizeTransferSwitchRetransferPolicy(
+        draft.retransferPolicy
+      );
+      nextProperties.transferDelaySeconds = transferDelaySeconds;
+      nextProperties.retransferDelaySeconds = retransferDelaySeconds;
       nextProperties.ratedCurrentAmps = ratedCurrentAmps;
     }
 
@@ -764,31 +840,129 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                 helperText="Examples: Automatic Transfer Switch, Static Transfer Switch, Manual Transfer Switch."
               />
               <SelectField
-                id="node-properties-active-source"
-                label="Active Source"
-                value={draft.activeSource}
+                id="node-properties-transfer-control-mode"
+                label="Control Mode"
+                value={draft.controlMode}
                 onChange={(nextValue) => {
                   setDraft((currentDraft) => ({
                     ...currentDraft,
-                    activeSource: nextValue
+                    controlMode: nextValue
                   }));
                 }}
                 options={[
                   {
-                    value: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
-                    label: formatTransferSwitchActiveSource(
-                      TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+                    value: TRANSFER_SWITCH_CONTROL_MODE.MANUAL,
+                    label: formatTransferSwitchControlMode(
+                      TRANSFER_SWITCH_CONTROL_MODE.MANUAL
                     )
                   },
                   {
-                    value: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY,
-                    label: formatTransferSwitchActiveSource(
-                      TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+                    value: TRANSFER_SWITCH_CONTROL_MODE.AUTO,
+                    label: formatTransferSwitchControlMode(
+                      TRANSFER_SWITCH_CONTROL_MODE.AUTO
                     )
                   }
                 ]}
-                helperText="Manual v1 transfer position used by the ATS conduction model."
+                helperText="Manual mode preserves direct throws. Auto mode follows sensed source availability and delay settings."
               />
+              {transferSwitchControlMode === TRANSFER_SWITCH_CONTROL_MODE.MANUAL ? (
+                <SelectField
+                  id="node-properties-active-source"
+                  label="Active Source"
+                  value={draft.activeSource}
+                  onChange={(nextValue) => {
+                    setDraft((currentDraft) => ({
+                      ...currentDraft,
+                      activeSource: nextValue
+                    }));
+                  }}
+                  options={[
+                    {
+                      value: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
+                      label: formatTransferSwitchActiveSource(
+                        TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+                      )
+                    },
+                    {
+                      value: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY,
+                      label: formatTransferSwitchActiveSource(
+                        TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+                      )
+                    }
+                  ]}
+                  helperText="Manual throw position used by the ATS conduction model."
+                />
+              ) : (
+                <div className="rounded border border-slate-700 bg-slate-950/60 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                    Active Source
+                  </div>
+                  <div className="mt-2 text-sm text-slate-100">
+                    {formatTransferSwitchActiveSource(draft.activeSource)}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Read-only in Auto mode. Runtime sensing and timer automation choose the live position.
+                  </div>
+                </div>
+              )}
+              <SelectField
+                id="node-properties-transfer-retransfer-policy"
+                label="Retransfer Policy"
+                value={draft.retransferPolicy}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    retransferPolicy: nextValue
+                  }));
+                }}
+                options={[
+                  {
+                    value: TRANSFER_SWITCH_RETRANSFER_POLICY.MANUAL_RETURN,
+                    label: formatTransferSwitchRetransferPolicy(
+                      TRANSFER_SWITCH_RETRANSFER_POLICY.MANUAL_RETURN
+                    )
+                  },
+                  {
+                    value: TRANSFER_SWITCH_RETRANSFER_POLICY.AUTO_RETURN,
+                    label: formatTransferSwitchRetransferPolicy(
+                      TRANSFER_SWITCH_RETRANSFER_POLICY.AUTO_RETURN
+                    )
+                  }
+                ]}
+                helperText="Manual Return latches on emergency until the active source fails. Auto Return returns to primary after its retransfer delay."
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <NumberInputField
+                  id="node-properties-transfer-delay"
+                  label="Transfer Delay (s)"
+                  value={draft.transferDelaySeconds}
+                  onChange={(nextValue) => {
+                    setDraft((currentDraft) => ({
+                      ...currentDraft,
+                      transferDelaySeconds: nextValue
+                    }));
+                  }}
+                  helperText="Delay before throwing to the alternate live source after the active source fails."
+                  errorText={transferDelaySecondsError}
+                  min="0"
+                  step="1"
+                />
+                <NumberInputField
+                  id="node-properties-retransfer-delay"
+                  label="Retransfer Delay (s)"
+                  value={draft.retransferDelaySeconds}
+                  onChange={(nextValue) => {
+                    setDraft((currentDraft) => ({
+                      ...currentDraft,
+                      retransferDelaySeconds: nextValue
+                    }));
+                  }}
+                  helperText="Delay before returning to primary when Auto Return is enabled and both sources are healthy."
+                  errorText={retransferDelaySecondsError}
+                  min="0"
+                  step="1"
+                />
+              </div>
               <NumberInputField
                 id="node-properties-transfer-rated-current"
                 label="Rated Current (A)"

@@ -3,7 +3,8 @@ import {
   EDGE_POWER_STATE,
   NODE_POWER_STATE,
   createTopologyKey,
-  evaluatePowerFlow
+  evaluatePowerFlow,
+  evaluateTransferSwitchSense
 } from "./powerFlow";
 import { evaluateProtectionState } from "./protection";
 import { BREAKER_STATE } from "./protectionModel";
@@ -1708,6 +1709,120 @@ describe("evaluatePowerFlow", () => {
   });
 });
 
+describe("evaluateTransferSwitchSense", () => {
+  it("senses a live primary feeder even while the ATS is thrown to emergency", () => {
+    const nodes = [
+      utilityNode("utility-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      generatorNode("gen-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        isSourceOnline: false
+      }),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+      }),
+      loadNode("load-a")
+    ];
+    const edges = [
+      breakerEdge("primary-feed", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      breakerEdge("emergency-feed", "gen-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.EMERGENCY
+      }),
+      standardEdge("ats-output", "ats-a", "load-a", {
+        sourceHandle: TRANSFER_SWITCH_HANDLE_ID.OUTPUT
+      })
+    ];
+    const transferSwitchSenseByNodeId = evaluateTransferSwitchSense(nodes, edges);
+    const { powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(transferSwitchSenseByNodeId["ats-a"]).toMatchObject({
+      primary: { powerState: NODE_POWER_STATE.LIVE, sourceIds: ["utility-a"] },
+      emergency: { powerState: NODE_POWER_STATE.DEAD, sourceIds: [] }
+    });
+    expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.DEAD);
+  });
+
+  it("senses a live emergency feeder while the primary source is dead", () => {
+    const nodes = [
+      utilityNode("utility-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        isSourceOnline: false
+      }),
+      generatorNode("gen-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY
+      })
+    ];
+    const edges = [
+      breakerEdge("primary-feed", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      breakerEdge("emergency-feed", "gen-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.EMERGENCY
+      })
+    ];
+    const transferSwitchSenseByNodeId = evaluateTransferSwitchSense(nodes, edges);
+
+    expect(transferSwitchSenseByNodeId["ats-a"]).toMatchObject({
+      primary: { powerState: NODE_POWER_STATE.DEAD, sourceIds: [] },
+      emergency: { powerState: NODE_POWER_STATE.LIVE, sourceIds: ["gen-a"] }
+    });
+  });
+
+  it("flags a voltage fault when an ATS input receives the wrong nominal voltage", () => {
+    const nodes = [
+      utilityNode("utility-a"),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+      }),
+      loadNode("load-a")
+    ];
+    const edges = [
+      breakerEdge("primary-feed", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      standardEdge("ats-output", "ats-a", "load-a", {
+        sourceHandle: TRANSFER_SWITCH_HANDLE_ID.OUTPUT
+      })
+    ];
+    const transferSwitchSenseByNodeId = evaluateTransferSwitchSense(nodes, edges);
+    const { powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(transferSwitchSenseByNodeId["ats-a"].primary.powerState).toBe(
+      NODE_POWER_STATE.VOLTAGE_FAULT
+    );
+    expect(powerStateByNodeId["load-a"]).toBe(NODE_POWER_STATE.DEAD);
+  });
+
+  it("flags phase conflict when unsynchronized sources land on the same ATS handle corridor", () => {
+    const nodes = [
+      utilityNode("utility-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      generatorNode("gen-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      switchboardNode("swbd-a"),
+      transferSwitchNode("ats-a")
+    ];
+    const edges = [
+      breakerEdge("utility-feed", "utility-a", "swbd-a", BREAKER_STATE.CLOSED),
+      breakerEdge("generator-feed", "gen-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        targetHandle: "switchboard-bus-bottom-in"
+      }),
+      breakerEdge("ats-primary", "swbd-a", "ats-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: "switchboard-bus-out",
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      })
+    ];
+    const transferSwitchSenseByNodeId = evaluateTransferSwitchSense(nodes, edges);
+
+    expect(transferSwitchSenseByNodeId["ats-a"].primary.powerState).toBe(
+      NODE_POWER_STATE.PHASE_CONFLICT
+    );
+    expect(transferSwitchSenseByNodeId["ats-a"].emergency.powerState).toBe(
+      NODE_POWER_STATE.DEAD
+    );
+  });
+});
+
 describe("createTopologyKey", () => {
   it("changes when utility source online flag changes", () => {
     const nodesOnline = [utilityNode("utility-a", { isSourceOnline: true }), mvsgNode("mvsg-a")];
@@ -1836,6 +1951,38 @@ describe("createTopologyKey", () => {
     const keyEmergency = createTopologyKey(nodesEmergency, edges);
 
     expect(keyPrimary).not.toBe(keyEmergency);
+  });
+
+  it("ignores ATS automation settings that do not change conductive topology", () => {
+    const nodesManual = [
+      utilityNode("utility-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
+        controlMode: "manual",
+        retransferPolicy: "manual-return",
+        transferDelaySeconds: 0,
+        retransferDelaySeconds: 0
+      })
+    ];
+    const nodesAuto = [
+      utilityNode("utility-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      transferSwitchNode("ats-a", {
+        activeSource: TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
+        controlMode: "auto",
+        retransferPolicy: "auto-return",
+        transferDelaySeconds: 7,
+        retransferDelaySeconds: 11
+      })
+    ];
+    const edges = [
+      breakerEdge("e1", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      })
+    ];
+    const keyManual = createTopologyKey(nodesManual, edges);
+    const keyAuto = createTopologyKey(nodesAuto, edges);
+
+    expect(keyManual).toBe(keyAuto);
   });
 
   it("changes when a UPS operating mode changes", () => {

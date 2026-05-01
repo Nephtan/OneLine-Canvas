@@ -1,4 +1,5 @@
 import {
+  TRANSFER_SWITCH_ACTIVE_SOURCE,
   TRANSFER_SWITCH_HANDLE_ID,
   getTransferSwitchHandleRole,
   isTransferSwitchNodeType,
@@ -44,6 +45,7 @@ export const EDGE_POWER_STATE = {
   PHASE_CONFLICT: "phase-conflict"
 };
 
+const TRANSFER_SWITCH_SENSE_PREFIX = "__transfer-switch-sense__";
 const FED_FROM_ARRIVAL_RANK = {
   PRIMARY_INPUT: 0,
   SECONDARY_INPUT: 1,
@@ -533,6 +535,123 @@ function setHasVoltageFaultForNode(node, arrivalBuckets, nodeVoltageSet) {
 
   const nominalVoltage = getNodeNominalVoltage(node);
   return Array.from(nodeVoltageSet).some((voltage) => voltage !== nominalVoltage);
+}
+
+function createTransferSwitchSenseResult(
+  powerState = NODE_POWER_STATE.DEAD,
+  sourceIds = [],
+  propagatingVoltages = []
+) {
+  return {
+    powerState,
+    sourceIds,
+    propagatingVoltages
+  };
+}
+
+function createTransferSwitchSenseNodeId(nodeId, handleRole, usedNodeIds) {
+  let candidateNodeId = `${TRANSFER_SWITCH_SENSE_PREFIX}${nodeId}__${handleRole}`;
+  let suffix = 1;
+
+  while (usedNodeIds.has(candidateNodeId)) {
+    candidateNodeId = `${TRANSFER_SWITCH_SENSE_PREFIX}${nodeId}__${handleRole}__${suffix}`;
+    suffix += 1;
+  }
+
+  usedNodeIds.add(candidateNodeId);
+  return candidateNodeId;
+}
+
+export function evaluateTransferSwitchSense(nodes, edges) {
+  const transferSwitchNodes = nodes.filter((node) => isTransferSwitchNodeType(node.type));
+
+  if (transferSwitchNodes.length === 0) {
+    return {};
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const usedNodeIds = new Set(nodes.map((node) => node.id));
+  const augmentedNodes = [...nodes];
+  const senseNodeIdByTransferSwitchId = {};
+
+  transferSwitchNodes.forEach((transferSwitchNode) => {
+    const primarySenseNodeId = createTransferSwitchSenseNodeId(
+      transferSwitchNode.id,
+      TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
+      usedNodeIds
+    );
+    const emergencySenseNodeId = createTransferSwitchSenseNodeId(
+      transferSwitchNode.id,
+      TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY,
+      usedNodeIds
+    );
+
+    senseNodeIdByTransferSwitchId[transferSwitchNode.id] = {
+      [TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY]: primarySenseNodeId,
+      [TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY]: emergencySenseNodeId
+    };
+
+    for (const senseNodeId of [primarySenseNodeId, emergencySenseNodeId]) {
+      augmentedNodes.push({
+        id: senseNodeId,
+        type: "load",
+        position: transferSwitchNode.position ?? { x: 0, y: 0 },
+        data: {
+          label: senseNodeId,
+          nominalVoltage: getNodeNominalVoltage(transferSwitchNode)
+        }
+      });
+    }
+  });
+
+  const augmentedEdges = edges.map((edge) => {
+    const targetNode = nodeById.get(edge.target);
+
+    if (!isTransferSwitchNodeType(targetNode?.type)) {
+      return edge;
+    }
+
+    const targetHandleRole = getTransferSwitchHandleRole(
+      normalizeTransferSwitchTargetHandle(edge.targetHandle)
+    );
+
+    if (
+      targetHandleRole !== TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY &&
+      targetHandleRole !== TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY
+    ) {
+      return edge;
+    }
+
+    return {
+      ...edge,
+      target: senseNodeIdByTransferSwitchId[targetNode.id][targetHandleRole],
+      targetHandle: undefined
+    };
+  });
+
+  const senseFlowResult = evaluatePowerFlow(augmentedNodes, augmentedEdges);
+  const transferSwitchSenseByNodeId = {};
+
+  transferSwitchNodes.forEach((transferSwitchNode) => {
+    const senseNodeIds = senseNodeIdByTransferSwitchId[transferSwitchNode.id];
+    const primarySenseNodeId = senseNodeIds[TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY];
+    const emergencySenseNodeId = senseNodeIds[TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY];
+
+    transferSwitchSenseByNodeId[transferSwitchNode.id] = {
+      primary: createTransferSwitchSenseResult(
+        senseFlowResult.powerStateByNodeId[primarySenseNodeId],
+        senseFlowResult.sourceIdsByNodeId[primarySenseNodeId] ?? [],
+        senseFlowResult.propagatingVoltagesByNodeId[primarySenseNodeId] ?? []
+      ),
+      emergency: createTransferSwitchSenseResult(
+        senseFlowResult.powerStateByNodeId[emergencySenseNodeId],
+        senseFlowResult.sourceIdsByNodeId[emergencySenseNodeId] ?? [],
+        senseFlowResult.propagatingVoltagesByNodeId[emergencySenseNodeId] ?? []
+      )
+    };
+  });
+
+  return transferSwitchSenseByNodeId;
 }
 
 export function createTopologyKey(nodes, edges) {
