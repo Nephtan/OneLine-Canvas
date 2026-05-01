@@ -13,6 +13,12 @@ const SOURCE_TYPE_LABEL = {
   generator: "GEN"
 };
 
+const VALIDATION_SOURCE_LABEL = {
+  live: "LIVE",
+  import: "IMPORT",
+  storage: "STORAGE"
+};
+
 function getTypeBadgeClassName(nodeType) {
   if (nodeType === "utility") {
     return "border-emerald-300/60 bg-emerald-500/10 text-emerald-200";
@@ -53,12 +59,69 @@ function getFaultStatusBadgeClassName(status) {
   return "border-slate-600 bg-slate-900/90 text-slate-300";
 }
 
+function getValidationSourceBadgeClassName(source) {
+  if (source === "storage") {
+    return "border-amber-400/70 bg-amber-500/10 text-amber-100";
+  }
+
+  if (source === "import") {
+    return "border-cyan-400/70 bg-cyan-500/10 text-cyan-100";
+  }
+
+  return "border-rose-400/70 bg-rose-500/10 text-rose-100";
+}
+
+function getValidationSeverityBadgeClassName(severity) {
+  if (severity === "error") {
+    return "border-rose-400/70 bg-rose-500/10 text-rose-100";
+  }
+
+  return "border-slate-600 bg-slate-900/90 text-slate-300";
+}
+
+function formatValidationIssueContextLabel(issue, nodeLabelById, edgeLabelById) {
+  const labels = [];
+
+  (issue.nodeIds ?? []).forEach((nodeId) => {
+    if (!nodeLabelById.has(nodeId)) {
+      return;
+    }
+
+    labels.push(nodeLabelById.get(nodeId) ?? nodeId);
+  });
+
+  (issue.edgeIds ?? []).forEach((edgeId) => {
+    if (!edgeLabelById.has(edgeId)) {
+      return;
+    }
+
+    labels.push(edgeLabelById.get(edgeId) ?? edgeId);
+  });
+
+  if (labels.length === 0) {
+    return issue.path || "Topology Contract";
+  }
+
+  return labels.slice(0, 2).join(" / ");
+}
+
+function canFocusValidationIssue(issue, nodeLabelById, edgeLabelById) {
+  return (
+    (issue.nodeIds ?? []).some((nodeId) => nodeLabelById.has(nodeId)) ||
+    (issue.edgeIds ?? []).some((edgeId) => edgeLabelById.has(edgeId))
+  );
+}
+
 function ScadaPanel({
   nodes,
   edges,
   powerStateByNodeId,
   faultSummaries,
   protectionTripEdgeIds,
+  liveValidationIssues,
+  latestRejectedValidationReport,
+  isPersistenceBlocked,
+  onFocusValidationIssue,
   onToggleSourceOnline,
   onChangeUpsOperatingMode,
   onResetAllBreakers,
@@ -194,6 +257,14 @@ function ScadaPanel({
     () => faultRows.filter((faultRow) => faultRow.status === "active").length,
     [faultRows]
   );
+  const currentValidationIssues = Array.isArray(liveValidationIssues)
+    ? liveValidationIssues
+    : [];
+  const rejectedValidationIssues = Array.isArray(latestRejectedValidationReport?.issues)
+    ? latestRejectedValidationReport.issues
+    : [];
+  const rejectedValidationLabel =
+    latestRejectedValidationReport?.label ?? "Rejected Import / Load";
 
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-r border-slate-700 bg-slate-950/95 p-3">
@@ -490,6 +561,186 @@ function ScadaPanel({
             </div>
           </div>
         )}
+      </div>
+
+      <div className="mt-3 rounded border border-slate-700 bg-slate-900">
+        <div className="border-b border-slate-700 bg-slate-950/95 px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">
+              Validation
+            </div>
+            <div
+              className={`inline-flex rounded border px-2 py-1 text-[9px] uppercase tracking-[0.16em] ${
+                isPersistenceBlocked
+                  ? "border-rose-400/70 bg-rose-500/10 text-rose-100"
+                  : "border-emerald-400/70 bg-emerald-500/10 text-emerald-100"
+              }`}
+            >
+              {isPersistenceBlocked ? "Persistence Blocked" : "Persistence Clear"}
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 px-3 py-3 text-[10px] uppercase tracking-[0.16em]">
+          <div className="rounded border border-slate-700 bg-slate-950 px-2 py-2">
+            <div className="text-slate-500">Current Yard</div>
+            <div className="mt-1 text-base text-rose-100">{currentValidationIssues.length}</div>
+          </div>
+          <div className="rounded border border-slate-700 bg-slate-950 px-2 py-2">
+            <div className="text-slate-500">Rejected I/O</div>
+            <div className="mt-1 text-base text-amber-100">
+              {rejectedValidationIssues.length}
+            </div>
+          </div>
+        </div>
+        <div className="max-h-80 overflow-y-auto px-3 pb-3">
+          <div>
+            <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+              Current Yard
+            </div>
+            {currentValidationIssues.length === 0 ? (
+              <div className="rounded border border-slate-800 bg-slate-950/80 px-3 py-3 text-xs text-slate-500">
+                No blocking live topology issues are active on the yard.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {currentValidationIssues.map((issue, issueIndex) => {
+                  const focusable = canFocusValidationIssue(
+                    issue,
+                    nodeLabelById,
+                    edgeLabelById
+                  );
+
+                  return (
+                    <button
+                      key={`live-${issue.path}-${issueIndex}`}
+                      type="button"
+                      disabled={!focusable}
+                      onClick={() => {
+                        onFocusValidationIssue?.(issue);
+                      }}
+                      className={`w-full rounded border px-3 py-2 text-left ${
+                        focusable
+                          ? "border-rose-500/50 bg-rose-950/20 hover:border-rose-400/80 hover:bg-rose-950/35"
+                          : "cursor-not-allowed border-slate-800 bg-slate-950/80"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-xs text-slate-100">
+                            {formatValidationIssueContextLabel(
+                              issue,
+                              nodeLabelById,
+                              edgeLabelById
+                            )}
+                          </div>
+                          <div className="mt-1 text-[10px] text-slate-400">
+                            {issue.message}
+                          </div>
+                        </div>
+                        <div
+                          className={`inline-flex shrink-0 rounded border px-2 py-1 text-[9px] uppercase tracking-[0.16em] ${getValidationSeverityBadgeClassName(
+                            issue.severity
+                          )}`}
+                        >
+                          {issue.severity}
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2 text-[10px]">
+                        <div className="truncate text-slate-500">
+                          {issue.path || "Topology Contract"}
+                        </div>
+                        <div className="text-slate-500">
+                          {focusable ? "Focus on canvas" : "No active target"}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 border-t border-slate-800 pt-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                {rejectedValidationLabel}
+              </div>
+              {latestRejectedValidationReport ? (
+                <div
+                  className={`inline-flex rounded border px-2 py-1 text-[9px] uppercase tracking-[0.16em] ${getValidationSourceBadgeClassName(
+                    latestRejectedValidationReport.source
+                  )}`}
+                >
+                  {VALIDATION_SOURCE_LABEL[latestRejectedValidationReport.source] ??
+                    latestRejectedValidationReport.source}
+                </div>
+              ) : null}
+            </div>
+            {rejectedValidationIssues.length === 0 ? (
+              <div className="rounded border border-slate-800 bg-slate-950/80 px-3 py-3 text-xs text-slate-500">
+                No rejected import or storage payloads have been recorded this session.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {rejectedValidationIssues.map((issue, issueIndex) => {
+                  const focusable = canFocusValidationIssue(
+                    issue,
+                    nodeLabelById,
+                    edgeLabelById
+                  );
+
+                  return (
+                    <button
+                      key={`rejected-${issue.path}-${issueIndex}`}
+                      type="button"
+                      disabled={!focusable}
+                      onClick={() => {
+                        onFocusValidationIssue?.(issue);
+                      }}
+                      className={`w-full rounded border px-3 py-2 text-left ${
+                        focusable
+                          ? "border-amber-500/50 bg-amber-950/15 hover:border-amber-400/80 hover:bg-amber-950/30"
+                          : "cursor-not-allowed border-slate-800 bg-slate-950/80"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-xs text-slate-100">
+                            {formatValidationIssueContextLabel(
+                              issue,
+                              nodeLabelById,
+                              edgeLabelById
+                            )}
+                          </div>
+                          <div className="mt-1 text-[10px] text-slate-400">
+                            {issue.message}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <div
+                            className={`inline-flex rounded border px-2 py-1 text-[9px] uppercase tracking-[0.16em] ${getValidationSourceBadgeClassName(
+                              issue.source
+                            )}`}
+                          >
+                            {VALIDATION_SOURCE_LABEL[issue.source] ?? issue.source}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2 text-[10px]">
+                        <div className="truncate text-slate-500">
+                          {issue.path || "Topology Contract"}
+                        </div>
+                        <div className="text-slate-500">
+                          {focusable ? "Focus on canvas" : "Not on active yard"}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded border border-slate-700 bg-slate-900">

@@ -724,3 +724,17 @@
 - Known gaps after this working-tree update:
   - Import diagnostics remain lightweight and modal-free: operators get an aggregated alert plus console detail, but there is still no inline issue browser or per-element recovery workflow.
   - Validation is intentionally strict only for PTX, ATS, and UPS handle identities; broader wiring-permissive checks for generic bus gear remain future work.
+
+## Working Tree Update: Live Validation Diagnostics and Persistence Guardrails (`2026-05-01`)
+- Major additions:
+  - Extended `src/persistence/topologyPersistence.js` from a persisted-payload validator into a shared diagnostics boundary with structured issues (`code`, `severity`, `source`, `path`, `nodeIds`, `edgeIds`), a new `validateLiveAppState(...)` entrypoint, and reusable validation-report formatting helpers.
+  - Reworked `src/App.jsx` so live canonical app state is memo-validated, invalid yards no longer autosave or export, invalid file/storage payloads populate a reusable rejected-report object, and clicking validation issues can now select and viewport-focus the affected gear on the active canvas.
+  - Expanded `src/components/ScadaPanel.jsx` with a docked `Validation` section that shows current-yard blocking issues separately from the latest rejected import/storage payload, including persistence status, source badges, and click-to-focus behavior when the referenced gear exists on the active yard.
+  - Added persistence tests for structured issue metadata, live-vs-persisted validation parity, blocking live persistence behavior, and structured invalid-JSON reports.
+- Current engine state:
+  - `evaluatePowerFlow(...)` and `evaluateProtectionState(...)` remain unchanged; this update is still UI/persistence guardrail work only.
+  - Live topology validation now runs against canonical `{ nodes, edges, mopSteps, mopBaseSnapshot }` state before any persistence path, so the React Flow yard can remain editable while localStorage writes and file export fail closed on hard contract errors.
+  - Import/load rejection is now dual-surface: operators still get an aggregated alert for immediate feedback, but the canonical diagnostics state also persists the latest rejected report into the SCADA rail for follow-up inspection.
+- Known gaps after this working-tree update:
+  - The first live diagnostics pass is intentionally hard-error-only; there is still no advisory warning tier for permissive-but-suspicious generic bus wiring or other non-blocking modeling guidance.
+  - Rejected import/storage reports only retain the latest failure and only focus the canvas when the referenced node or edge ids exist on the active yard.

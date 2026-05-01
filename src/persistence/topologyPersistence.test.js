@@ -9,13 +9,19 @@ import { TRANSFORMER_HANDLE_ID } from "../topology/transformer";
 import { UPS_HANDLE_ID, UPS_OPERATING_MODE } from "../topology/ups";
 import { normalizeGraphState } from "../nodes/nodeData";
 import {
+  createBlankAppState,
+  createValidationReport,
   createPersistedAppState,
   deserializePersistedAppStateJson,
+  hasBlockingValidationIssues,
   MOP_ACTION_TYPE,
   parsePersistedAppState,
   serializePersistedAppState,
   TOPOLOGY_SCHEMA_VERSION,
-  validatePersistedAppState
+  validateLiveAppState,
+  validatePersistedAppState,
+  VALIDATION_SEVERITY,
+  VALIDATION_SOURCE
 } from "./topologyPersistence";
 
 function utilityNode(id, data = {}) {
@@ -230,6 +236,21 @@ function createValidVersionedPayload() {
   };
 }
 
+function toComparableIssueShape(issues) {
+  return [...issues]
+    .map((issue) => ({
+      code: issue.code,
+      message: issue.message,
+      nodeIds: issue.nodeIds,
+      edgeIds: issue.edgeIds
+    }))
+    .sort((leftIssue, rightIssue) =>
+      `${leftIssue.code}:${leftIssue.message}`.localeCompare(
+        `${rightIssue.code}:${rightIssue.message}`
+      )
+    );
+}
+
 describe("topology persistence validation", () => {
   it("accepts a valid schemaVersion 1 payload", () => {
     const validation = validatePersistedAppState(createValidVersionedPayload());
@@ -310,6 +331,37 @@ describe("topology persistence validation", () => {
       expect.arrayContaining([
         expect.objectContaining({ path: "payload.nodes[1].id" }),
         expect.objectContaining({ path: "payload.edges[1].id" })
+      ])
+    );
+  });
+
+  it("emits structured issue metadata for duplicate ids and missing references", () => {
+    const payload = createValidVersionedPayload();
+    payload.nodes[1].id = payload.nodes[0].id;
+    payload.edges[0].target = "missing-node";
+
+    const validation = validatePersistedAppState(payload, {
+      source: VALIDATION_SOURCE.STORAGE
+    });
+
+    expect(validation.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "duplicate-node-id",
+          severity: VALIDATION_SEVERITY.ERROR,
+          source: VALIDATION_SOURCE.STORAGE,
+          path: "payload.nodes[1].id",
+          nodeIds: [payload.nodes[0].id],
+          edgeIds: []
+        }),
+        expect.objectContaining({
+          code: "missing-node-reference",
+          severity: VALIDATION_SEVERITY.ERROR,
+          source: VALIDATION_SOURCE.STORAGE,
+          path: "payload.edges[0].target",
+          nodeIds: ["missing-node"],
+          edgeIds: ["utility-to-mvsg"]
+        })
       ])
     );
   });
@@ -579,5 +631,83 @@ describe("topology persistence round-trip", () => {
         actionText: "Killed Utility A"
       });
     }
+  });
+});
+
+describe("live topology diagnostics", () => {
+  it("matches persisted and live issue semantics for the same invalid topology", () => {
+    const appState = createBlankAppState();
+    const payload = createValidVersionedPayload();
+
+    payload.edges[1].targetHandle = "not-a-transformer-handle";
+    payload.edges[3].targetHandle = TRANSFER_SWITCH_HANDLE_ID.LEGACY_INPUT;
+    payload.nodes[0].data.nominalVoltage = 0;
+
+    appState.nodes = payload.nodes;
+    appState.edges = payload.edges;
+
+    const persistedValidation = validatePersistedAppState(
+      createPersistedAppState(appState),
+      { source: VALIDATION_SOURCE.IMPORT }
+    );
+    const liveValidation = validateLiveAppState(appState);
+
+    expect(persistedValidation.isValid).toBe(false);
+    expect(liveValidation.isValid).toBe(false);
+    expect(liveValidation.issues.every((issue) => issue.source === VALIDATION_SOURCE.LIVE)).toBe(
+      true
+    );
+    expect(toComparableIssueShape(liveValidation.issues)).toEqual(
+      toComparableIssueShape(persistedValidation.issues)
+    );
+  });
+
+  it("treats live hard errors as persistence blockers", () => {
+    const validPayload = createValidVersionedPayload();
+    const validAppState = {
+      nodes: validPayload.nodes,
+      edges: validPayload.edges,
+      mopSteps: [],
+      mopBaseSnapshot: null
+    };
+    const invalidAppState = {
+      ...validAppState,
+      edges: validAppState.edges.map((edge) =>
+        edge.id === "switchboard-to-ats"
+          ? {
+              ...edge,
+              targetHandle: TRANSFER_SWITCH_HANDLE_ID.LEGACY_INPUT
+            }
+          : edge
+      )
+    };
+
+    expect(hasBlockingValidationIssues(validateLiveAppState(validAppState).issues)).toBe(false);
+    expect(hasBlockingValidationIssues(validateLiveAppState(invalidAppState).issues)).toBe(true);
+  });
+
+  it("returns structured invalid-json issues and report summaries for rejected payloads", () => {
+    const result = deserializePersistedAppStateJson("{", {
+      source: VALIDATION_SOURCE.STORAGE
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues).toEqual([
+      expect.objectContaining({
+        code: "invalid-json",
+        severity: VALIDATION_SEVERITY.ERROR,
+        source: VALIDATION_SOURCE.STORAGE
+      })
+    ]);
+
+    const report = createValidationReport({
+      label: "Persisted topology",
+      source: VALIDATION_SOURCE.STORAGE,
+      issues: result.issues,
+      parseError: result.parseError
+    });
+
+    expect(report.summary).toContain("Persisted topology rejected.");
+    expect(report.issues).toHaveLength(1);
   });
 });

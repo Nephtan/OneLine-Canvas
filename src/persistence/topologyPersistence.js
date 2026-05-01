@@ -27,6 +27,16 @@ export const MOP_ACTION_TYPE = {
   DELETE_EDGE: "DELETE_EDGE"
 };
 
+export const VALIDATION_SEVERITY = {
+  ERROR: "error"
+};
+
+export const VALIDATION_SOURCE = {
+  LIVE: "live",
+  IMPORT: "import",
+  STORAGE: "storage"
+};
+
 const SUPPORTED_NODE_TYPES = new Set([
   "utility",
   "generator",
@@ -63,8 +73,45 @@ function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function pushIssue(issues, path, message) {
-  issues.push({ path, message });
+function normalizeIssueIds(ids) {
+  if (!Array.isArray(ids)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      ids.filter((value) => typeof value === "string" && value.trim() !== "")
+    )
+  );
+}
+
+function createValidationContext(source) {
+  return {
+    source
+  };
+}
+
+function pushIssue(
+  issues,
+  context,
+  path,
+  message,
+  {
+    code = "invalid-topology",
+    severity = VALIDATION_SEVERITY.ERROR,
+    nodeIds = [],
+    edgeIds = []
+  } = {}
+) {
+  issues.push({
+    code,
+    severity,
+    source: context.source,
+    path,
+    message,
+    nodeIds: normalizeIssueIds(nodeIds),
+    edgeIds: normalizeIssueIds(edgeIds)
+  });
 }
 
 function formatPath(path) {
@@ -109,60 +156,111 @@ function parseOptionalPositiveNumberLike(value) {
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
 }
 
-function validateOptionalStringField(value, path, issues) {
+function validateOptionalStringField(value, path, issues, context, issueOptions) {
   if (value !== undefined && typeof value !== "string") {
-    pushIssue(issues, path, "must be a string when provided.");
+    pushIssue(issues, context, path, "must be a string when provided.", issueOptions);
   }
 }
 
-function validateOptionalBooleanField(value, path, issues) {
+function validateOptionalBooleanField(value, path, issues, context, issueOptions) {
   if (value !== undefined && typeof value !== "boolean") {
-    pushIssue(issues, path, "must be a boolean when provided.");
+    pushIssue(issues, context, path, "must be a boolean when provided.", issueOptions);
   }
 }
 
-function validateOptionalEnumField(value, allowedValues, path, issues) {
+function validateOptionalEnumField(
+  value,
+  allowedValues,
+  path,
+  issues,
+  context,
+  issueOptions
+) {
   if (value !== undefined && !allowedValues.has(value)) {
     pushIssue(
       issues,
+      context,
       path,
-      `must be one of: ${Array.from(allowedValues).join(", ")}.`
+      `must be one of: ${Array.from(allowedValues).join(", ")}.`,
+      issueOptions
     );
   }
 }
 
-function validateOptionalPositiveIntegerField(value, path, issues) {
+function validateOptionalPositiveIntegerField(value, path, issues, context, issueOptions) {
   if (value === undefined) {
     return;
   }
 
   if (parseOptionalPositiveIntegerLike(value) === null) {
-    pushIssue(issues, path, "must be a positive whole-number value when provided.");
+    pushIssue(
+      issues,
+      context,
+      path,
+      "must be a positive whole-number value when provided.",
+      issueOptions
+    );
   }
 }
 
-function validateOptionalPositiveNumberField(value, path, issues) {
+function validateOptionalPositiveNumberField(value, path, issues, context, issueOptions) {
   if (value === undefined) {
     return;
   }
 
   if (parseOptionalPositiveNumberLike(value) === null) {
-    pushIssue(issues, path, "must be a positive numeric value when provided.");
+    pushIssue(
+      issues,
+      context,
+      path,
+      "must be a positive numeric value when provided.",
+      issueOptions
+    );
   }
 }
 
-function validateRequiredVoltageField(value, path, issues, fallbackValue) {
+function validateRequiredVoltageField(
+  value,
+  path,
+  issues,
+  context,
+  issueOptions,
+  fallbackValue
+) {
   if (parseVoltageInput(value ?? fallbackValue) === null) {
-    pushIssue(issues, path, "must resolve to a positive voltage.");
+    pushIssue(
+      issues,
+      context,
+      path,
+      "must resolve to a positive voltage.",
+      issueOptions
+    );
   }
 }
 
-function validateNodeData(node, nodePath, issues, isLegacyPayload) {
+function validateNodeData(node, nodePath, issues, context, isLegacyPayload) {
   const data = node.data;
   const dataPath = `${nodePath}.data`;
+  const issueOptions = {
+    code: "invalid-node-metadata",
+    nodeIds: [node.id]
+  };
 
-  validateOptionalStringField(data.label, `${dataPath}.label`, issues);
-  validateOptionalEnumField(data.faultType, SUPPORTED_FAULT_TYPES, `${dataPath}.faultType`, issues);
+  validateOptionalStringField(
+    data.label,
+    `${dataPath}.label`,
+    issues,
+    context,
+    issueOptions
+  );
+  validateOptionalEnumField(
+    data.faultType,
+    SUPPORTED_FAULT_TYPES,
+    `${dataPath}.faultType`,
+    issues,
+    context,
+    issueOptions
+  );
 
   if (node.type === TRANSFORMER_NODE_TYPE) {
     const legacyRatioVoltages = isLegacyPayload
@@ -172,17 +270,25 @@ function validateNodeData(node, nodePath, issues, isLegacyPayload) {
     validateRequiredVoltageField(
       data.primaryVoltage ?? legacyRatioVoltages[0],
       `${dataPath}.primaryVoltage`,
-      issues
+      issues,
+      context,
+      issueOptions,
+      undefined
     );
     validateRequiredVoltageField(
       data.secondaryVoltage ?? legacyRatioVoltages[1],
       `${dataPath}.secondaryVoltage`,
-      issues
+      issues,
+      context,
+      issueOptions,
+      undefined
     );
     validateOptionalPositiveNumberField(
       data.transformerImpedancePercent,
       `${dataPath}.transformerImpedancePercent`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     return;
   }
@@ -190,16 +296,33 @@ function validateNodeData(node, nodePath, issues, isLegacyPayload) {
   validateRequiredVoltageField(
     data.nominalVoltage ?? (isLegacyPayload ? data.voltage : undefined),
     `${dataPath}.nominalVoltage`,
-    issues
+    issues,
+    context,
+    issueOptions,
+    undefined
   );
 
   if (SOURCE_NODE_TYPES.has(node.type)) {
-    validateOptionalStringField(data.syncGroup, `${dataPath}.syncGroup`, issues);
-    validateOptionalBooleanField(data.isSourceOnline, `${dataPath}.isSourceOnline`, issues);
+    validateOptionalStringField(
+      data.syncGroup,
+      `${dataPath}.syncGroup`,
+      issues,
+      context,
+      issueOptions
+    );
+    validateOptionalBooleanField(
+      data.isSourceOnline,
+      `${dataPath}.isSourceOnline`,
+      issues,
+      context,
+      issueOptions
+    );
     validateOptionalPositiveIntegerField(
       data.availableFaultCurrentAmps,
       `${dataPath}.availableFaultCurrentAmps`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     return;
   }
@@ -208,72 +331,126 @@ function validateNodeData(node, nodePath, issues, isLegacyPayload) {
     validateOptionalPositiveIntegerField(
       data.ratedCurrentAmps,
       `${dataPath}.ratedCurrentAmps`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     return;
   }
 
   if (node.type === "load") {
-    validateOptionalStringField(data.loadClass, `${dataPath}.loadClass`, issues);
+    validateOptionalStringField(
+      data.loadClass,
+      `${dataPath}.loadClass`,
+      issues,
+      context,
+      issueOptions
+    );
     validateOptionalPositiveIntegerField(
       data.ratedCurrentAmps,
       `${dataPath}.ratedCurrentAmps`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     return;
   }
 
   if (node.type === "switchboard") {
-    validateOptionalStringField(data.boardClass, `${dataPath}.boardClass`, issues);
+    validateOptionalStringField(
+      data.boardClass,
+      `${dataPath}.boardClass`,
+      issues,
+      context,
+      issueOptions
+    );
     validateOptionalPositiveIntegerField(
       data.ratedCurrentAmps,
       `${dataPath}.ratedCurrentAmps`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     return;
   }
 
   if (node.type === TRANSFER_SWITCH_NODE_TYPE) {
-    validateOptionalStringField(data.switchClass, `${dataPath}.switchClass`, issues);
+    validateOptionalStringField(
+      data.switchClass,
+      `${dataPath}.switchClass`,
+      issues,
+      context,
+      issueOptions
+    );
     validateOptionalEnumField(
       data.activeSource,
       SUPPORTED_TRANSFER_SWITCH_ACTIVE_SOURCES,
       `${dataPath}.activeSource`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     validateOptionalPositiveIntegerField(
       data.ratedCurrentAmps,
       `${dataPath}.ratedCurrentAmps`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     return;
   }
 
   if (node.type === UPS_NODE_TYPE) {
-    validateOptionalStringField(data.upsClass, `${dataPath}.upsClass`, issues);
+    validateOptionalStringField(
+      data.upsClass,
+      `${dataPath}.upsClass`,
+      issues,
+      context,
+      issueOptions
+    );
     validateOptionalPositiveIntegerField(
       data.ratedCurrentAmps,
       `${dataPath}.ratedCurrentAmps`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
-    validateOptionalPositiveIntegerField(data.kvaRating, `${dataPath}.kvaRating`, issues);
+    validateOptionalPositiveIntegerField(
+      data.kvaRating,
+      `${dataPath}.kvaRating`,
+      issues,
+      context,
+      issueOptions
+    );
     validateOptionalPositiveIntegerField(
       data.batteryRuntimeMinutes,
       `${dataPath}.batteryRuntimeMinutes`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     validateOptionalBooleanField(
       data.batteryAvailable,
       `${dataPath}.batteryAvailable`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     validateOptionalEnumField(
       data.operatingMode,
       SUPPORTED_UPS_OPERATING_MODES,
       `${dataPath}.operatingMode`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
-    validateOptionalStringField(data.syncGroup, `${dataPath}.syncGroup`, issues);
+    validateOptionalStringField(
+      data.syncGroup,
+      `${dataPath}.syncGroup`,
+      issues,
+      context,
+      issueOptions
+    );
     return;
   }
 
@@ -281,17 +458,21 @@ function validateNodeData(node, nodePath, issues, isLegacyPayload) {
     validateOptionalStringField(
       data.mechanicalClass,
       `${dataPath}.mechanicalClass`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
     validateOptionalPositiveIntegerField(
       data.ratedCurrentAmps,
       `${dataPath}.ratedCurrentAmps`,
-      issues
+      issues,
+      context,
+      issueOptions
     );
   }
 }
 
-function validateEdgeType(edgeType, edgePath, issues, isLegacyPayload) {
+function validateEdgeType(edgeType, edgePath, issues, context, isLegacyPayload, edgeId) {
   if (SUPPORTED_EDGE_TYPES.has(edgeType)) {
     return;
   }
@@ -302,69 +483,115 @@ function validateEdgeType(edgeType, edgePath, issues, isLegacyPayload) {
 
   pushIssue(
     issues,
+    context,
     `${edgePath}.type`,
-    `must be "${EDGE_TYPE.BREAKER}" or "${EDGE_TYPE.STANDARD}".`
+    `must be "${EDGE_TYPE.BREAKER}" or "${EDGE_TYPE.STANDARD}".`,
+    {
+      code: "invalid-edge-type",
+      edgeIds: [edgeId]
+    }
   );
 }
 
-function validateEdgeData(edge, edgePath, issues) {
+function validateEdgeData(edge, edgePath, issues, context) {
   const data = edge.data;
   const dataPath = `${edgePath}.data`;
+  const issueOptions = {
+    code: "invalid-edge-metadata",
+    edgeIds: [edge.id],
+    nodeIds: [edge.source, edge.target]
+  };
 
   validateOptionalEnumField(
     data.breakerState,
     SUPPORTED_BREAKER_STATES,
     `${dataPath}.breakerState`,
-    issues
+    issues,
+    context,
+    issueOptions
   );
   validateOptionalEnumField(
     data.deviceKind,
     SUPPORTED_EDGE_DEVICE_KINDS,
     `${dataPath}.deviceKind`,
-    issues
+    issues,
+    context,
+    issueOptions
   );
   validateOptionalEnumField(
     data.protectionMode,
     SUPPORTED_PROTECTION_MODES,
     `${dataPath}.protectionMode`,
-    issues
+    issues,
+    context,
+    issueOptions
   );
   validateOptionalEnumField(
     data.lineSide,
     SUPPORTED_EDGE_LINE_SIDES,
     `${dataPath}.lineSide`,
-    issues
+    issues,
+    context,
+    issueOptions
   );
   validateOptionalEnumField(
     data.faultType,
     SUPPORTED_FAULT_TYPES,
     `${dataPath}.faultType`,
-    issues
+    issues,
+    context,
+    issueOptions
   );
   validateOptionalEnumField(
     data.tripReason,
     SUPPORTED_TRIP_REASONS,
     `${dataPath}.tripReason`,
-    issues
+    issues,
+    context,
+    issueOptions
   );
   validateOptionalPositiveIntegerField(
     data.ratedCurrentAmps,
     `${dataPath}.ratedCurrentAmps`,
-    issues
+    issues,
+    context,
+    issueOptions
   );
   validateOptionalPositiveIntegerField(
     data.interruptingRatingAmps,
     `${dataPath}.interruptingRatingAmps`,
-    issues
+    issues,
+    context,
+    issueOptions
   );
   validateOptionalPositiveNumberField(
     data.conductorImpedanceOhms,
     `${dataPath}.conductorImpedanceOhms`,
-    issues
+    issues,
+    context,
+    issueOptions
   );
-  validateOptionalStringField(data.deviceFamily, `${dataPath}.deviceFamily`, issues);
-  validateOptionalStringField(data.tripUnit, `${dataPath}.tripUnit`, issues);
-  validateOptionalStringField(data.curveKey, `${dataPath}.curveKey`, issues);
+  validateOptionalStringField(
+    data.deviceFamily,
+    `${dataPath}.deviceFamily`,
+    issues,
+    context,
+    issueOptions
+  );
+  validateOptionalStringField(
+    data.tripUnit,
+    `${dataPath}.tripUnit`,
+    issues,
+    context,
+    issueOptions
+  );
+  validateOptionalStringField(
+    data.curveKey,
+    `${dataPath}.curveKey`,
+    issues,
+    context,
+    issueOptions
+  );
 }
 
 function validateEndpointHandle({
@@ -373,18 +600,20 @@ function validateEndpointHandle({
   allowedValues,
   path,
   issues,
+  context,
+  issueOptions,
   allowMissing,
   allowedLegacyValues = []
 }) {
   if (handleValue === undefined || handleValue === null || handleValue === "") {
     if (!allowMissing) {
-      pushIssue(issues, path, "is required for this endpoint.");
+      pushIssue(issues, context, path, "is required for this endpoint.", issueOptions);
     }
     return;
   }
 
   if (typeof handleValue !== "string") {
-    pushIssue(issues, path, "must be a string when provided.");
+    pushIssue(issues, context, path, "must be a string when provided.", issueOptions);
     return;
   }
 
@@ -398,14 +627,28 @@ function validateEndpointHandle({
 
   pushIssue(
     issues,
+    context,
     path,
-    `is not a supported handle for ${nodeType} endpoints.`
+    `is not a supported handle for ${nodeType} endpoints.`,
+    issueOptions
   );
 }
 
-function validateHandleAssignments(edge, edgePath, nodeById, issues, isLegacyPayload) {
+function validateHandleAssignments(
+  edge,
+  edgePath,
+  nodeById,
+  issues,
+  context,
+  isLegacyPayload
+) {
   const sourceNode = nodeById.get(edge.source);
   const targetNode = nodeById.get(edge.target);
+  const issueOptions = {
+    code: "invalid-handle-assignment",
+    edgeIds: [edge.id],
+    nodeIds: [edge.source, edge.target]
+  };
 
   if (sourceNode?.type === TRANSFORMER_NODE_TYPE) {
     validateEndpointHandle({
@@ -414,6 +657,8 @@ function validateHandleAssignments(edge, edgePath, nodeById, issues, isLegacyPay
       allowedValues: SUPPORTED_TRANSFORMER_HANDLES,
       path: `${edgePath}.sourceHandle`,
       issues,
+      context,
+      issueOptions,
       allowMissing: isLegacyPayload
     });
   }
@@ -425,6 +670,8 @@ function validateHandleAssignments(edge, edgePath, nodeById, issues, isLegacyPay
       allowedValues: SUPPORTED_TRANSFORMER_HANDLES,
       path: `${edgePath}.targetHandle`,
       issues,
+      context,
+      issueOptions,
       allowMissing: isLegacyPayload
     });
   }
@@ -436,6 +683,8 @@ function validateHandleAssignments(edge, edgePath, nodeById, issues, isLegacyPay
       allowedValues: new Set([TRANSFER_SWITCH_HANDLE_ID.OUTPUT]),
       path: `${edgePath}.sourceHandle`,
       issues,
+      context,
+      issueOptions,
       allowMissing: isLegacyPayload
     });
   }
@@ -450,6 +699,8 @@ function validateHandleAssignments(edge, edgePath, nodeById, issues, isLegacyPay
       ]),
       path: `${edgePath}.targetHandle`,
       issues,
+      context,
+      issueOptions,
       allowMissing: isLegacyPayload,
       allowedLegacyValues: isLegacyPayload
         ? [TRANSFER_SWITCH_HANDLE_ID.LEGACY_INPUT]
@@ -464,6 +715,8 @@ function validateHandleAssignments(edge, edgePath, nodeById, issues, isLegacyPay
       allowedValues: new Set([UPS_HANDLE_ID.OUTPUT]),
       path: `${edgePath}.sourceHandle`,
       issues,
+      context,
+      issueOptions,
       allowMissing: isLegacyPayload
     });
   }
@@ -475,23 +728,37 @@ function validateHandleAssignments(edge, edgePath, nodeById, issues, isLegacyPay
       allowedValues: new Set([UPS_HANDLE_ID.INPUT]),
       path: `${edgePath}.targetHandle`,
       issues,
+      context,
+      issueOptions,
       allowMissing: isLegacyPayload
     });
   }
 }
 
-function validateGraphState(graphValue, graphPath, issues, isLegacyPayload) {
+function validateGraphState(graphValue, graphPath, issues, context, isLegacyPayload) {
   if (!isPlainObject(graphValue)) {
-    pushIssue(issues, graphPath, "must be an object containing nodes and edges.");
+    pushIssue(
+      issues,
+      context,
+      graphPath,
+      "must be an object containing nodes and edges.",
+      {
+        code: "invalid-graph-shape"
+      }
+    );
     return;
   }
 
   if (!Array.isArray(graphValue.nodes)) {
-    pushIssue(issues, `${graphPath}.nodes`, "must be an array.");
+    pushIssue(issues, context, `${graphPath}.nodes`, "must be an array.", {
+      code: "invalid-graph-shape"
+    });
   }
 
   if (!Array.isArray(graphValue.edges)) {
-    pushIssue(issues, `${graphPath}.edges`, "must be an array.");
+    pushIssue(issues, context, `${graphPath}.edges`, "must be an array.", {
+      code: "invalid-graph-shape"
+    });
   }
 
   if (!Array.isArray(graphValue.nodes) || !Array.isArray(graphValue.edges)) {
@@ -505,48 +772,102 @@ function validateGraphState(graphValue, graphPath, issues, isLegacyPayload) {
     const nodePath = `${graphPath}.nodes[${index}]`;
 
     if (!isPlainObject(node)) {
-      pushIssue(issues, nodePath, "must be an object.");
+      pushIssue(issues, context, nodePath, "must be an object.", {
+        code: "invalid-node-shape"
+      });
       return;
     }
 
-    if (typeof node.id !== "string" || node.id.trim() === "") {
-      pushIssue(issues, `${nodePath}.id`, "must be a non-empty string.");
-    } else if (seenNodeIds.has(node.id)) {
-      pushIssue(issues, `${nodePath}.id`, `duplicates node id "${node.id}".`);
+    const nodeId =
+      typeof node.id === "string" && node.id.trim() !== "" ? node.id : null;
+    const nodeIssueOptions = nodeId
+      ? {
+          nodeIds: [nodeId]
+        }
+      : {};
+
+    if (!nodeId) {
+      pushIssue(issues, context, `${nodePath}.id`, "must be a non-empty string.", {
+        code: "invalid-node-id"
+      });
+    } else if (seenNodeIds.has(nodeId)) {
+      pushIssue(
+        issues,
+        context,
+        `${nodePath}.id`,
+        `duplicates node id "${nodeId}".`,
+        {
+          code: "duplicate-node-id",
+          nodeIds: [nodeId]
+        }
+      );
     } else {
-      seenNodeIds.add(node.id);
-      nodeById.set(node.id, node);
+      seenNodeIds.add(nodeId);
+      nodeById.set(nodeId, node);
     }
 
     if (!SUPPORTED_NODE_TYPES.has(node.type)) {
-      pushIssue(issues, `${nodePath}.type`, "is not a supported equipment type.");
+      pushIssue(
+        issues,
+        context,
+        `${nodePath}.type`,
+        "is not a supported equipment type.",
+        {
+          code: "invalid-node-type",
+          ...nodeIssueOptions
+        }
+      );
     }
 
     if (!isPlainObject(node.position)) {
-      pushIssue(issues, `${nodePath}.position`, "must be an object with finite x/y.");
+      pushIssue(
+        issues,
+        context,
+        `${nodePath}.position`,
+        "must be an object with finite x/y.",
+        {
+          code: "invalid-node-shape",
+          ...nodeIssueOptions
+        }
+      );
     } else {
-      if (
-        typeof node.position.x !== "number" ||
-        !Number.isFinite(node.position.x)
-      ) {
-        pushIssue(issues, `${nodePath}.position.x`, "must be a finite number.");
+      if (typeof node.position.x !== "number" || !Number.isFinite(node.position.x)) {
+        pushIssue(
+          issues,
+          context,
+          `${nodePath}.position.x`,
+          "must be a finite number.",
+          {
+            code: "invalid-node-shape",
+            ...nodeIssueOptions
+          }
+        );
       }
 
-      if (
-        typeof node.position.y !== "number" ||
-        !Number.isFinite(node.position.y)
-      ) {
-        pushIssue(issues, `${nodePath}.position.y`, "must be a finite number.");
+      if (typeof node.position.y !== "number" || !Number.isFinite(node.position.y)) {
+        pushIssue(
+          issues,
+          context,
+          `${nodePath}.position.y`,
+          "must be a finite number.",
+          {
+            code: "invalid-node-shape",
+            ...nodeIssueOptions
+          }
+        );
       }
     }
 
     if (!isPlainObject(node.data)) {
-      pushIssue(issues, `${nodePath}.data`, "must be an object.");
+      pushIssue(issues, context, `${nodePath}.data`, "must be an object.", {
+        code: "invalid-node-shape",
+        ...nodeIssueOptions
+      });
       return;
     }
 
     if (SUPPORTED_NODE_TYPES.has(node.type)) {
-      validateNodeData(node, nodePath, issues, isLegacyPayload);
+      validateNodeData(node, nodePath, issues, context, isLegacyPayload);
     }
   });
 
@@ -556,54 +877,150 @@ function validateGraphState(graphValue, graphPath, issues, isLegacyPayload) {
     const edgePath = `${graphPath}.edges[${index}]`;
 
     if (!isPlainObject(edge)) {
-      pushIssue(issues, edgePath, "must be an object.");
+      pushIssue(issues, context, edgePath, "must be an object.", {
+        code: "invalid-edge-shape"
+      });
       return;
     }
 
-    if (typeof edge.id !== "string" || edge.id.trim() === "") {
-      pushIssue(issues, `${edgePath}.id`, "must be a non-empty string.");
-    } else if (seenEdgeIds.has(edge.id)) {
-      pushIssue(issues, `${edgePath}.id`, `duplicates edge id "${edge.id}".`);
+    const edgeId =
+      typeof edge.id === "string" && edge.id.trim() !== "" ? edge.id : null;
+    const edgeIssueOptions = edgeId
+      ? {
+          edgeIds: [edgeId]
+        }
+      : {};
+
+    if (!edgeId) {
+      pushIssue(issues, context, `${edgePath}.id`, "must be a non-empty string.", {
+        code: "invalid-edge-id"
+      });
+    } else if (seenEdgeIds.has(edgeId)) {
+      pushIssue(
+        issues,
+        context,
+        `${edgePath}.id`,
+        `duplicates edge id "${edgeId}".`,
+        {
+          code: "duplicate-edge-id",
+          edgeIds: [edgeId]
+        }
+      );
     } else {
-      seenEdgeIds.add(edge.id);
+      seenEdgeIds.add(edgeId);
     }
 
     if (typeof edge.source !== "string" || edge.source.trim() === "") {
-      pushIssue(issues, `${edgePath}.source`, "must be a non-empty node id string.");
+      pushIssue(
+        issues,
+        context,
+        `${edgePath}.source`,
+        "must be a non-empty node id string.",
+        {
+          code: "invalid-edge-shape",
+          ...edgeIssueOptions
+        }
+      );
     } else if (!nodeById.has(edge.source)) {
       pushIssue(
         issues,
+        context,
         `${edgePath}.source`,
-        `references missing node "${edge.source}".`
+        `references missing node "${edge.source}".`,
+        {
+          code: "missing-node-reference",
+          edgeIds: edgeId ? [edgeId] : [],
+          nodeIds: [edge.source]
+        }
       );
     }
 
     if (typeof edge.target !== "string" || edge.target.trim() === "") {
-      pushIssue(issues, `${edgePath}.target`, "must be a non-empty node id string.");
+      pushIssue(
+        issues,
+        context,
+        `${edgePath}.target`,
+        "must be a non-empty node id string.",
+        {
+          code: "invalid-edge-shape",
+          ...edgeIssueOptions
+        }
+      );
     } else if (!nodeById.has(edge.target)) {
       pushIssue(
         issues,
+        context,
         `${edgePath}.target`,
-        `references missing node "${edge.target}".`
+        `references missing node "${edge.target}".`,
+        {
+          code: "missing-node-reference",
+          edgeIds: edgeId ? [edgeId] : [],
+          nodeIds: [edge.target]
+        }
       );
     }
 
-    validateEdgeType(edge.type, edgePath, issues, isLegacyPayload);
+    validateEdgeType(edge.type, edgePath, issues, context, isLegacyPayload, edgeId);
 
     if (!isPlainObject(edge.data)) {
-      pushIssue(issues, `${edgePath}.data`, "must be an object.");
+      pushIssue(issues, context, `${edgePath}.data`, "must be an object.", {
+        code: "invalid-edge-shape",
+        edgeIds: edgeId ? [edgeId] : [],
+        nodeIds: [edge.source, edge.target]
+      });
       return;
     }
 
-    validateEdgeData(edge, edgePath, issues);
-    validateHandleAssignments(edge, edgePath, nodeById, issues, isLegacyPayload);
+    validateEdgeData(edge, edgePath, issues, context);
+    validateHandleAssignments(
+      edge,
+      edgePath,
+      nodeById,
+      issues,
+      context,
+      isLegacyPayload
+    );
   });
 }
 
-function validateMopTargetState(step, stepPath, issues) {
+function getMopTargetIssueOptions(step) {
+  const targetId =
+    typeof step.targetId === "string" && step.targetId.trim() !== ""
+      ? step.targetId
+      : null;
+
+  if (targetId === null) {
+    return {
+      code: "invalid-mop-state"
+    };
+  }
+
+  if (
+    step.actionType === MOP_ACTION_TYPE.TOGGLE_BREAKER ||
+    step.actionType === MOP_ACTION_TYPE.DELETE_EDGE
+  ) {
+    return {
+      code: "invalid-mop-state",
+      edgeIds: [targetId]
+    };
+  }
+
+  return {
+    code: "invalid-mop-state",
+    nodeIds: [targetId]
+  };
+}
+
+function validateMopTargetState(step, stepPath, issues, context, issueOptions) {
   if (step.actionType === MOP_ACTION_TYPE.TOGGLE_SOURCE) {
     if (typeof step.targetState !== "boolean") {
-      pushIssue(issues, `${stepPath}.targetState`, "must be a boolean.");
+      pushIssue(
+        issues,
+        context,
+        `${stepPath}.targetState`,
+        "must be a boolean.",
+        issueOptions
+      );
     }
     return;
   }
@@ -615,8 +1032,10 @@ function validateMopTargetState(step, stepPath, issues) {
     ) {
       pushIssue(
         issues,
+        context,
         `${stepPath}.targetState`,
-        `must be "${BREAKER_STATE.OPEN}" or "${BREAKER_STATE.CLOSED}".`
+        `must be "${BREAKER_STATE.OPEN}" or "${BREAKER_STATE.CLOSED}".`,
+        issueOptions
       );
     }
     return;
@@ -626,8 +1045,12 @@ function validateMopTargetState(step, stepPath, issues) {
     if (!SUPPORTED_TRANSFER_SWITCH_ACTIVE_SOURCES.has(step.targetState)) {
       pushIssue(
         issues,
+        context,
         `${stepPath}.targetState`,
-        `must be one of: ${Array.from(SUPPORTED_TRANSFER_SWITCH_ACTIVE_SOURCES).join(", ")}.`
+        `must be one of: ${Array.from(
+          SUPPORTED_TRANSFER_SWITCH_ACTIVE_SOURCES
+        ).join(", ")}.`,
+        issueOptions
       );
     }
     return;
@@ -637,16 +1060,116 @@ function validateMopTargetState(step, stepPath, issues) {
     if (!SUPPORTED_UPS_OPERATING_MODES.has(step.targetState)) {
       pushIssue(
         issues,
+        context,
         `${stepPath}.targetState`,
-        `must be one of: ${Array.from(SUPPORTED_UPS_OPERATING_MODES).join(", ")}.`
+        `must be one of: ${Array.from(SUPPORTED_UPS_OPERATING_MODES).join(", ")}.`,
+        issueOptions
       );
     }
     return;
   }
 
   if (step.targetState !== "deleted") {
-    pushIssue(issues, `${stepPath}.targetState`, 'must be "deleted".');
+    pushIssue(
+      issues,
+      context,
+      `${stepPath}.targetState`,
+      'must be "deleted".',
+      issueOptions
+    );
   }
+}
+
+function validateAppStateCore(value, rootPath, issues, context, isLegacyPayload) {
+  validateGraphState(value, rootPath, issues, context, isLegacyPayload);
+
+  if (value.mopBaseSnapshot !== undefined && value.mopBaseSnapshot !== null) {
+    validateGraphState(
+      value.mopBaseSnapshot,
+      `${rootPath}.mopBaseSnapshot`,
+      issues,
+      context,
+      isLegacyPayload
+    );
+  }
+
+  if (value.mopSteps !== undefined && !Array.isArray(value.mopSteps)) {
+    pushIssue(issues, context, `${rootPath}.mopSteps`, "must be an array when provided.", {
+      code: "invalid-mop-state"
+    });
+  }
+
+  if (!Array.isArray(value.mopSteps)) {
+    return;
+  }
+
+  if (
+    value.mopSteps.length > 0 &&
+    (value.mopBaseSnapshot === null || value.mopBaseSnapshot === undefined)
+  ) {
+    pushIssue(
+      issues,
+      context,
+      `${rootPath}.mopBaseSnapshot`,
+      "must be a graph snapshot when mopSteps are present.",
+      {
+        code: "invalid-mop-state"
+      }
+    );
+  }
+
+  value.mopSteps.forEach((step, index) => {
+    const stepPath = `${rootPath}.mopSteps[${index}]`;
+
+    if (!isPlainObject(step)) {
+      pushIssue(issues, context, stepPath, "must be an object.", {
+        code: "invalid-mop-state"
+      });
+      return;
+    }
+
+    const issueOptions = getMopTargetIssueOptions(step);
+
+    if (typeof step.targetId !== "string" || step.targetId.trim() === "") {
+      pushIssue(
+        issues,
+        context,
+        `${stepPath}.targetId`,
+        "must be a non-empty string.",
+        issueOptions
+      );
+    }
+
+    if (!Object.values(MOP_ACTION_TYPE).includes(step.actionType)) {
+      pushIssue(
+        issues,
+        context,
+        `${stepPath}.actionType`,
+        "is not a supported MOP action.",
+        issueOptions
+      );
+    } else {
+      validateMopTargetState(step, stepPath, issues, context, issueOptions);
+    }
+
+    if (step.actionText !== undefined && typeof step.actionText !== "string") {
+      pushIssue(
+        issues,
+        context,
+        `${stepPath}.actionText`,
+        "must be a string when provided.",
+        issueOptions
+      );
+    }
+
+    validateGraphState(
+      step.snapshot,
+      `${stepPath}.snapshot`,
+      issues,
+      context,
+      isLegacyPayload
+    );
+  });
 }
 
 function normalizeMopTargetState(actionType, targetState) {
@@ -771,10 +1294,10 @@ export function serializeGraphState(graphState) {
 export function createPersistedAppState(appState) {
   return {
     schemaVersion: TOPOLOGY_SCHEMA_VERSION,
-    nodes: appState.nodes,
-    edges: appState.edges,
-    mopSteps: appState.mopSteps,
-    mopBaseSnapshot: appState.mopBaseSnapshot
+    nodes: Array.isArray(appState.nodes) ? appState.nodes : [],
+    edges: Array.isArray(appState.edges) ? appState.edges : [],
+    mopSteps: Array.isArray(appState.mopSteps) ? appState.mopSteps : [],
+    mopBaseSnapshot: appState.mopBaseSnapshot ?? null
   };
 }
 
@@ -786,11 +1309,17 @@ export function serializePersistedAppState(appState, pretty = false) {
   );
 }
 
-export function validatePersistedAppState(value) {
+export function validatePersistedAppState(
+  value,
+  { source = VALIDATION_SOURCE.IMPORT } = {}
+) {
   const issues = [];
+  const context = createValidationContext(source);
 
   if (!isPlainObject(value)) {
-    pushIssue(issues, "", "Topology payload must be an object.");
+    pushIssue(issues, context, "", "Topology payload must be an object.", {
+      code: "invalid-payload"
+    });
     return {
       isValid: false,
       issues,
@@ -804,63 +1333,16 @@ export function validatePersistedAppState(value) {
   if (!isLegacyPayload && schemaVersion !== TOPOLOGY_SCHEMA_VERSION) {
     pushIssue(
       issues,
+      context,
       "schemaVersion",
-      `must be ${TOPOLOGY_SCHEMA_VERSION} or omitted for legacy payloads.`
+      `must be ${TOPOLOGY_SCHEMA_VERSION} or omitted for legacy payloads.`,
+      {
+        code: "unsupported-schema-version"
+      }
     );
   }
 
-  validateGraphState(value, "payload", issues, isLegacyPayload);
-
-  if (value.mopBaseSnapshot !== undefined && value.mopBaseSnapshot !== null) {
-    validateGraphState(
-      value.mopBaseSnapshot,
-      "payload.mopBaseSnapshot",
-      issues,
-      isLegacyPayload
-    );
-  }
-
-  if (value.mopSteps !== undefined && !Array.isArray(value.mopSteps)) {
-    pushIssue(issues, "payload.mopSteps", "must be an array when provided.");
-  }
-
-  if (Array.isArray(value.mopSteps)) {
-    if (
-      value.mopSteps.length > 0 &&
-      (value.mopBaseSnapshot === null || value.mopBaseSnapshot === undefined)
-    ) {
-      pushIssue(
-        issues,
-        "payload.mopBaseSnapshot",
-        "must be a graph snapshot when mopSteps are present."
-      );
-    }
-
-    value.mopSteps.forEach((step, index) => {
-      const stepPath = `payload.mopSteps[${index}]`;
-
-      if (!isPlainObject(step)) {
-        pushIssue(issues, stepPath, "must be an object.");
-        return;
-      }
-
-      if (typeof step.targetId !== "string" || step.targetId.trim() === "") {
-        pushIssue(issues, `${stepPath}.targetId`, "must be a non-empty string.");
-      }
-
-      if (!Object.values(MOP_ACTION_TYPE).includes(step.actionType)) {
-        pushIssue(issues, `${stepPath}.actionType`, "is not a supported MOP action.");
-      } else {
-        validateMopTargetState(step, stepPath, issues);
-      }
-
-      if (step.actionText !== undefined && typeof step.actionText !== "string") {
-        pushIssue(issues, `${stepPath}.actionText`, "must be a string when provided.");
-      }
-
-      validateGraphState(step.snapshot, `${stepPath}.snapshot`, issues, isLegacyPayload);
-    });
-  }
+  validateAppStateCore(value, "payload", issues, context, isLegacyPayload);
 
   return {
     isValid: issues.length === 0,
@@ -869,8 +1351,39 @@ export function validatePersistedAppState(value) {
   };
 }
 
-export function parsePersistedAppState(value) {
-  const validation = validatePersistedAppState(value);
+export function validateLiveAppState(appState) {
+  const issues = [];
+  const context = createValidationContext(VALIDATION_SOURCE.LIVE);
+
+  if (!isPlainObject(appState)) {
+    pushIssue(issues, context, "", "Live topology must be an object.", {
+      code: "invalid-payload"
+    });
+    return {
+      isValid: false,
+      issues
+    };
+  }
+
+  validateAppStateCore(appState, "appState", issues, context, false);
+
+  return {
+    isValid: issues.length === 0,
+    issues
+  };
+}
+
+export function hasBlockingValidationIssues(issues) {
+  return Array.isArray(issues)
+    ? issues.some((issue) => issue?.severity === VALIDATION_SEVERITY.ERROR)
+    : false;
+}
+
+export function parsePersistedAppState(
+  value,
+  { source = VALIDATION_SOURCE.IMPORT } = {}
+) {
+  const validation = validatePersistedAppState(value, { source });
 
   if (!validation.isValid) {
     return {
@@ -902,17 +1415,25 @@ export function parsePersistedAppState(value) {
   };
 }
 
-export function deserializePersistedAppStateJson(rawText) {
+export function deserializePersistedAppStateJson(
+  rawText,
+  { source = VALIDATION_SOURCE.IMPORT } = {}
+) {
   try {
     const parsedValue = JSON.parse(rawText);
-    return parsePersistedAppState(parsedValue);
+    return parsePersistedAppState(parsedValue, { source });
   } catch (error) {
     return {
       ok: false,
       issues: [
         {
+          code: "invalid-json",
+          severity: VALIDATION_SEVERITY.ERROR,
+          source,
           path: "",
-          message: "Topology payload is not valid JSON."
+          message: "Topology payload is not valid JSON.",
+          nodeIds: [],
+          edgeIds: []
         }
       ],
       parseError: error
@@ -939,4 +1460,19 @@ export function formatPersistedAppStateValidationSummary(
   }
 
   return `${label} rejected.\n\n${summaryLines.join("\n")}`;
+}
+
+export function createValidationReport({
+  label = "Topology import",
+  issues = [],
+  source = issues[0]?.source ?? VALIDATION_SOURCE.IMPORT,
+  parseError
+} = {}) {
+  return {
+    label,
+    source,
+    issues: Array.isArray(issues) ? issues : [],
+    summary: formatPersistedAppStateValidationSummary(issues, label),
+    parseError
+  };
 }

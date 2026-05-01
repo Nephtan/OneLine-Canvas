@@ -34,7 +34,8 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 ## Validation and Import Safety
 - [x] Replace shallow graph-shape import validation with deep schema and version-aware validation for node and edge payloads.
 - [x] Add validation for malformed or incomplete electrical metadata so bad imports do not silently degrade simulation fidelity.
-- [ ] Decide how invalid handle assignments or future device-specific wiring errors should be surfaced to the operator.
+- [x] Surface invalid handle assignments and other current hard validation failures to operators through a docked validation workflow instead of alerts alone.
+- [ ] Decide whether future validation should add advisory warning tiers and broader generic-wiring guidance beyond the current hard-error-only diagnostics panel.
 
 ## Testing and Performance
 - [x] Add tests for canonical electrical metadata normalization and persistence across create, hydrate, export, and import flows.

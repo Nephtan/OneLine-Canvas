@@ -38,12 +38,16 @@ import {
 } from "./nodes/nodeData";
 import {
   cloneGraphState,
+  createValidationReport,
   createBlankAppState,
   deserializePersistedAppStateJson,
-  formatPersistedAppStateValidationSummary,
+  hasBlockingValidationIssues,
   MOP_ACTION_TYPE,
   serializeGraphState,
-  serializePersistedAppState
+  serializePersistedAppState,
+  validateLiveAppState,
+  VALIDATION_SEVERITY,
+  VALIDATION_SOURCE
 } from "./persistence/topologyPersistence";
 import {
   formatTransferSwitchActiveSource,
@@ -109,37 +113,81 @@ function getNextBreakerState(currentState) {
     : BREAKER_STATE.CLOSED;
 }
 
+function logValidationReport(report) {
+  if (!report) {
+    return;
+  }
+
+  console.error(report.summary);
+  console.error(`${report.label} validation issues:`, report.issues);
+  if (report.parseError) {
+    console.error(report.parseError);
+  }
+}
+
 function readGraphStateFromStorage() {
   if (typeof window === "undefined") {
-    return createBlankAppState();
+    return {
+      appState: createBlankAppState(),
+      rejectedValidationReport: null
+    };
   }
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
 
     if (!raw) {
-      return createBlankAppState();
+      return {
+        appState: createBlankAppState(),
+        rejectedValidationReport: null
+      };
     }
 
-    const result = deserializePersistedAppStateJson(raw);
+    const result = deserializePersistedAppStateJson(raw, {
+      source: VALIDATION_SOURCE.STORAGE
+    });
 
     if (!result.ok) {
-      const summary = formatPersistedAppStateValidationSummary(
-        result.issues,
-        "Persisted topology"
-      );
-      console.error(summary);
-      console.error("Persisted topology validation issues:", result.issues);
-      if (result.parseError) {
-        console.error(result.parseError);
-      }
-      return createBlankAppState();
+      const report = createValidationReport({
+        label: "Persisted topology",
+        source: VALIDATION_SOURCE.STORAGE,
+        issues: result.issues,
+        parseError: result.parseError
+      });
+      logValidationReport(report);
+      return {
+        appState: createBlankAppState(),
+        rejectedValidationReport: report
+      };
     }
 
-    return result.appState;
+    return {
+      appState: result.appState,
+      rejectedValidationReport: null
+    };
   } catch (error) {
+    const report = createValidationReport({
+      label: "Persisted topology",
+      source: VALIDATION_SOURCE.STORAGE,
+      issues: [
+        {
+          code: "storage-read-failed",
+          severity: VALIDATION_SEVERITY.ERROR,
+          source: VALIDATION_SOURCE.STORAGE,
+          path: "",
+          message: "Stored topology could not be read.",
+          nodeIds: [],
+          edgeIds: []
+        }
+      ],
+      parseError: error
+    });
     console.error("Failed to parse persisted topology. Falling back to blank yard.", error);
-    return createBlankAppState();
+    logValidationReport(report);
+    return {
+      appState: createBlankAppState(),
+      rejectedValidationReport: report
+    };
   }
 }
 
@@ -197,11 +245,15 @@ function getMovedNodeDeltasById(changes, currentNodes) {
 }
 
 function App() {
-  const initialGraph = useMemo(() => readGraphStateFromStorage(), []);
+  const initialLoadState = useMemo(() => readGraphStateFromStorage(), []);
+  const initialGraph = initialLoadState.appState;
   const [nodes, setNodes] = useNodesState(initialGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges);
   const [mopSteps, setMopSteps] = useState(initialGraph.mopSteps);
   const [mopBaseSnapshot, setMopBaseSnapshot] = useState(initialGraph.mopBaseSnapshot);
+  const [latestRejectedValidationReport, setLatestRejectedValidationReport] = useState(
+    initialLoadState.rejectedValidationReport
+  );
   const [isRecordingMop, setIsRecordingMop] = useState(false);
   const [edgeDrawMode, setEdgeDrawMode] = useState(EDGE_TYPE.BREAKER);
   const [mopPlaybackIndex, setMopPlaybackIndex] = useState(() =>
@@ -224,6 +276,20 @@ function App() {
   const lastPasteAnchorKeyRef = useRef(null);
   const repeatedPasteCountRef = useRef(0);
   const skipNextAutosaveRef = useRef(false);
+  const currentAppState = useMemo(
+    () => ({
+      nodes,
+      edges,
+      mopSteps,
+      mopBaseSnapshot
+    }),
+    [nodes, edges, mopSteps, mopBaseSnapshot]
+  );
+  const liveValidationResult = useMemo(
+    () => validateLiveAppState(currentAppState),
+    [currentAppState]
+  );
+  const isPersistenceBlocked = hasBlockingValidationIssues(liveValidationResult.issues);
   const {
     powerStateByNodeId,
     powerFlagsByNodeId,
@@ -251,20 +317,19 @@ function App() {
       return;
     }
 
+    if (isPersistenceBlocked) {
+      return;
+    }
+
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        serializePersistedAppState({
-          nodes,
-          edges,
-          mopSteps,
-          mopBaseSnapshot
-        })
+        serializePersistedAppState(currentAppState)
       );
     } catch (error) {
       console.error("Failed to persist topology to localStorage.", error);
     }
-  }, [nodes, edges, mopSteps, mopBaseSnapshot]);
+  }, [currentAppState, isPersistenceBlocked]);
 
   useEffect(() => {
     if (!protectionTripEdgeIds || protectionTripEdgeIds.length === 0) {
@@ -1092,8 +1157,19 @@ function App() {
   }, []);
 
   const onSaveToFile = useCallback(() => {
+    if (isPersistenceBlocked) {
+      const report = createValidationReport({
+        label: "Topology export",
+        source: VALIDATION_SOURCE.LIVE,
+        issues: liveValidationResult.issues
+      });
+      logValidationReport(report);
+      window.alert(report.summary);
+      return;
+    }
+
     const topologyJson = serializePersistedAppState(
-      { nodes, edges, mopSteps, mopBaseSnapshot },
+      currentAppState,
       true
     );
     const topologyBlob = new Blob([topologyJson], {
@@ -1108,7 +1184,7 @@ function App() {
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(objectUrl);
-  }, [nodes, edges, mopSteps, mopBaseSnapshot]);
+  }, [currentAppState, isPersistenceBlocked, liveValidationResult.issues]);
 
   const onLoadFromFile = useCallback(() => {
     importInputRef.current?.click();
@@ -1125,23 +1201,25 @@ function App() {
 
       try {
         const fileText = await file.text();
-        const result = deserializePersistedAppStateJson(fileText);
+        const result = deserializePersistedAppStateJson(fileText, {
+          source: VALIDATION_SOURCE.IMPORT
+        });
 
         if (!result.ok) {
-          const summary = formatPersistedAppStateValidationSummary(
-            result.issues,
-            "Topology import"
-          );
-          console.error(summary);
-          console.error("Topology import validation issues:", result.issues);
-          if (result.parseError) {
-            console.error(result.parseError);
-          }
-          window.alert(summary);
+          const report = createValidationReport({
+            label: "Topology import",
+            source: VALIDATION_SOURCE.IMPORT,
+            issues: result.issues,
+            parseError: result.parseError
+          });
+          setLatestRejectedValidationReport(report);
+          logValidationReport(report);
+          window.alert(report.summary);
           return;
         }
 
         const normalizedAppState = result.appState;
+        setLatestRejectedValidationReport(null);
         setIsRecordingMop(false);
         setPendingMopAction(null);
         setActivePropertiesNodeId(null);
@@ -1159,8 +1237,26 @@ function App() {
           )
         );
       } catch (error) {
+        const report = createValidationReport({
+          label: "Topology import",
+          source: VALIDATION_SOURCE.IMPORT,
+          issues: [
+            {
+              code: "import-read-failed",
+              severity: VALIDATION_SEVERITY.ERROR,
+              source: VALIDATION_SOURCE.IMPORT,
+              path: "",
+              message: "Topology payload could not be read from disk.",
+              nodeIds: [],
+              edgeIds: []
+            }
+          ],
+          parseError: error
+        });
+        setLatestRejectedValidationReport(report);
         console.error("Topology import failed.", error);
-        window.alert("Topology import rejected.\n\n1. Topology payload is not valid JSON.");
+        logValidationReport(report);
+        window.alert(report.summary);
       }
     },
     [setNodes, setEdges]
@@ -1275,6 +1371,78 @@ function App() {
     [edgeDrawMode]
   );
 
+  const focusValidationIssue = useCallback(
+    (issue) => {
+      if (!issue) {
+        return;
+      }
+
+      const focusNodeIdSet = new Set(
+        (Array.isArray(issue.nodeIds) ? issue.nodeIds : []).filter((nodeId) =>
+          nodes.some((node) => node.id === nodeId)
+        )
+      );
+      const focusEdgeIdSet = new Set(
+        (Array.isArray(issue.edgeIds) ? issue.edgeIds : []).filter((edgeId) =>
+          edges.some((edge) => edge.id === edgeId)
+        )
+      );
+
+      edges.forEach((edge) => {
+        if (!focusEdgeIdSet.has(edge.id)) {
+          return;
+        }
+
+        if (nodes.some((node) => node.id === edge.source)) {
+          focusNodeIdSet.add(edge.source);
+        }
+
+        if (nodes.some((node) => node.id === edge.target)) {
+          focusNodeIdSet.add(edge.target);
+        }
+      });
+
+      if (focusNodeIdSet.size === 0 && focusEdgeIdSet.size === 0) {
+        return;
+      }
+
+      setActivePropertiesNodeId(null);
+      setActivePropertiesEdgeId(null);
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => ({
+          ...node,
+          selected: focusNodeIdSet.has(node.id)
+        }))
+      );
+      setEdges((currentEdges) =>
+        currentEdges.map((edge) => ({
+          ...edge,
+          selected: focusEdgeIdSet.has(edge.id)
+        }))
+      );
+
+      const reactFlowInstance = reactFlowInstanceRef.current;
+
+      if (!reactFlowInstance?.viewportInitialized) {
+        return;
+      }
+
+      const focusNodes = reactFlowInstance
+        .getNodes()
+        .filter((node) => focusNodeIdSet.has(node.id));
+
+      if (focusNodes.length > 0) {
+        void reactFlowInstance.fitView({
+          nodes: focusNodes,
+          duration: 240,
+          padding: 0.24,
+          maxZoom: 1.3
+        });
+      }
+    },
+    [edges, nodes, setEdges, setNodes]
+  );
+
   const activePropertiesNode = useMemo(
     () => nodes.find((node) => node.id === activePropertiesNodeId) ?? null,
     [nodes, activePropertiesNodeId]
@@ -1314,6 +1482,10 @@ function App() {
           powerStateByNodeId={powerStateByNodeId}
           faultSummaries={faultSummaries}
           protectionTripEdgeIds={protectionTripEdgeIds}
+          liveValidationIssues={liveValidationResult.issues}
+          latestRejectedValidationReport={latestRejectedValidationReport}
+          isPersistenceBlocked={isPersistenceBlocked}
+          onFocusValidationIssue={focusValidationIssue}
           onToggleSourceOnline={handleSourceToggleRequest}
           onChangeUpsOperatingMode={handleUpsOperatingModeRequest}
           onResetAllBreakers={resetAllTrippedBreakers}
