@@ -32,12 +32,12 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 - [ ] Model UPS battery depletion, charger state, and runtime consumption instead of the current binary `batteryAvailable` flag.
 
 ## Validation and Import Safety
-- [ ] Replace shallow graph-shape import validation with deep schema and version-aware validation for node and edge payloads.
-- [ ] Add validation for malformed or incomplete electrical metadata so bad imports do not silently degrade simulation fidelity.
+- [x] Replace shallow graph-shape import validation with deep schema and version-aware validation for node and edge payloads.
+- [x] Add validation for malformed or incomplete electrical metadata so bad imports do not silently degrade simulation fidelity.
 - [ ] Decide how invalid handle assignments or future device-specific wiring errors should be surfaced to the operator.
 
 ## Testing and Performance
-- [ ] Add tests for canonical electrical metadata normalization and persistence across create, hydrate, export, and import flows.
+- [x] Add tests for canonical electrical metadata normalization and persistence across create, hydrate, export, and import flows.
 - [ ] Extend operator-facing `Fed From` coverage beyond the current breaker / wire / PTX / ATS / UPS lineup, which now includes handle-aware switchboard precedence and the `ExampleTopology/EXAMPLE-TOPOLOGY.json` regression fixture.
 - [ ] Add formal large-graph stress and performance coverage for traversal cost ceilings and memoization stability.
 - [ ] Add higher-order tests for future protection-study semantics such as TCC discrimination, impedance-driven duty calculations, and device-family-specific settings.

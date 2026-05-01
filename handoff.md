@@ -32,6 +32,7 @@
 | Working Tree | `working-tree` | `2026-04-22` | `Add hybrid selective protection, bolted faults, and edge properties` | Implemented |
 | Working Tree | `working-tree` | `2026-04-22` | `Restore edge-properties gear access for breakers and wires` | Implemented |
 | Working Tree | `working-tree` | `2026-05-01` | `Audit documentation backlog and prioritize import-validation hardening` | Implemented |
+| Working Tree | `working-tree` | `2026-05-01` | `Implement schema-v1 persistence validation and metadata round-trip tests` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -594,7 +595,7 @@
 - Edge conductivity is controlled by normalized edge type plus edge data: `breaker` edges use `edge.data.breakerState`, while `standard` edges are always conductive unless blocked by ATS logic.
 - Valid breaker states are `open`, `closed`, and `tripped`; only `closed` is conductive.
 - Big Bus handle geometry is intentionally permissive and does not enforce electrical correctness.
-- Persistence contract is now `{ nodes, edges, mopSteps, mopBaseSnapshot }` with backward-compatible shallow import validation at the top-level graph shape.
+- Persistence contract is now `{ schemaVersion, nodes, edges, mopSteps, mopBaseSnapshot }`, where `schemaVersion: 1` is canonical for new exports and legacy unversioned payloads remain importable only through the explicit persistence validator/migration path.
 - Manual edge routing metadata is view-only and must stay isolated under `edge.pathOptions.centerX` / `centerY`; it must never alter conductivity, topology extraction, or breaker semantics.
 - `usePowerFlow` now returns `displaySourceNodeIdsByNodeId`, `fedFromNodeIdByNodeId`, `sourceIdsByEdgeId`, `faultSummaries`, `protectionTripEdgeIds`, and backward-compatible `faultedEdgeIds` in addition to node/edge power maps.
 - Canonical voltage metadata must remain numeric in volts: standard gear uses `nominalVoltage`, while PTXs use `primaryVoltage` and `secondaryVoltage`.
@@ -626,7 +627,6 @@
 - Big Bus geometry intentionally allows operator-error topologies; no interlock/sequencing logic is enforced.
 - Terminal sinks (`load`, `mechanical`) rely on handle geometry; deeper directionality/protection validation is not implemented.
 - Advanced electrical semantics remain unmodeled (for example transformer vector groups, impedance, tap settings, and detailed transfer/protection schemes).
-- Import validation is shallow; deep schema/version validation for node payloads is not implemented.
 - Persistence is local-browser scoped only; no remote sync, revision history, or multi-user merge workflow exists.
 - `Clear Yard` remains destructive with no confirmation/undo stack.
 - Source controls are now available both node-local and via SCADA, and Phase 12 adds linear scenario playback, but there is still no scripted SOO automation, batch editing, timeline branching, or timed autoplay layer.
@@ -665,8 +665,8 @@
 - No engine model/tests for synchronization permissives beyond shared sync-group identity (phase-angle drift, frequency slip, or voltage windows).
 - No selective relay coordination model (zone-selective interlocking, staged tripping, breaker priorities).
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
-- No deep import-schema validation tests for unknown/malformed node data payloads.
 - No formal large-graph stress/performance test suite for traversal cost ceilings.
+- Persistence validation and metadata round-trip coverage now exist for schema-v1 payloads, legacy voltage/ratio/ATS migrations, malformed node and edge payloads, handle validation, and invalid MOP snapshots.
 - No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, edge-properties/delete-button workflows, snap-to-grid layout behavior, midpoint edge rerouting, or the breaker vs solid-wire connection tool.
 - No dedicated UI tests yet cover UPS mode buttons, switchboard bottom-edge connection hitboxes, or battery-availability editing flows.
 - Automated simulation test execution beyond dependency validation still depends on the current workspace toolchain remaining installed and healthy.
@@ -710,3 +710,17 @@
 - Known gaps after this working-tree update:
   - Invalid node payloads, malformed electrical metadata, and unsupported handle assignments are still not surfaced as first-class operator diagnostics.
   - Node-side metadata normalization coverage is still much lighter than engine traversal/protection coverage, especially for imported and hydrated graphs.
+
+## Working Tree Update: Schema-v1 Persistence Validation (`2026-05-01`)
+- Major additions:
+  - Added `src/persistence/topologyPersistence.js` as the pure persistence boundary for schema versioning, deep payload validation, import normalization, and issue-summary formatting.
+  - Upgraded autosave and file export payloads to include canonical `schemaVersion: 1` while keeping legacy unversioned imports compatible with the existing voltage-string, transformer-ratio, and legacy ATS-handle migrations.
+  - Reworked `src/App.jsx` to route localStorage hydration and file import through the shared validator, reject bad payloads without mutating the active yard, and surface aggregated validation summaries to operators plus full issue lists in the console.
+  - Added `src/persistence/topologyPersistence.test.js` coverage for valid schema-v1 payloads, valid legacy imports, malformed topology structure, bad metadata, invalid PTX/ATS/UPS handles, invalid MOP snapshots, and metadata round-trip preservation across create/hydrate/export/import flows.
+- Current engine state:
+  - `evaluatePowerFlow(...)` and `evaluateProtectionState(...)` remain unchanged; this update does not alter traversal, voltage propagation, protection heuristics, or React Flow rendering semantics for valid graphs.
+  - Persistence acceptance is now fail-closed at the boundary: accepted payloads are validated first and normalized second, while invalid payloads never reach `normalizeGraphState(...)` or mutate live canvas state.
+  - Schema-v1 exports are now the canonical portable artifact shape, but the runtime still intentionally accepts legacy unversioned payloads through the explicit migration/validation path.
+- Known gaps after this working-tree update:
+  - Import diagnostics remain lightweight and modal-free: operators get an aggregated alert plus console detail, but there is still no inline issue browser or per-element recovery workflow.
+  - Validation is intentionally strict only for PTX, ATS, and UPS handle identities; broader wiring-permissive checks for generic bus gear remain future work.

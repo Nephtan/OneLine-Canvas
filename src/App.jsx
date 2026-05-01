@@ -37,6 +37,15 @@ import {
   normalizeNodeData
 } from "./nodes/nodeData";
 import {
+  cloneGraphState,
+  createBlankAppState,
+  deserializePersistedAppStateJson,
+  formatPersistedAppStateValidationSummary,
+  MOP_ACTION_TYPE,
+  serializeGraphState,
+  serializePersistedAppState
+} from "./persistence/topologyPersistence";
+import {
   formatTransferSwitchActiveSource,
   normalizeTransferSwitchActiveSource
 } from "./topology/transferSwitch";
@@ -71,168 +80,6 @@ const edgeTypes = {
 };
 
 const STORAGE_KEY = "oneline-canvas-state";
-const MOP_ACTION_TYPE = {
-  TOGGLE_SOURCE: "TOGGLE_SOURCE",
-  TOGGLE_BREAKER: "TOGGLE_BREAKER",
-  THROW_TRANSFER_SWITCH: "THROW_TRANSFER_SWITCH",
-  SET_UPS_MODE: "SET_UPS_MODE",
-  DELETE_NODE: "DELETE_NODE",
-  DELETE_EDGE: "DELETE_EDGE"
-};
-
-function isGraphStateShape(value) {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    Array.isArray(value.nodes) &&
-    Array.isArray(value.edges)
-  );
-}
-
-function getBlankAppState() {
-  return {
-    nodes: [],
-    edges: [],
-    mopSteps: [],
-    mopBaseSnapshot: null
-  };
-}
-
-function cloneGraphState(graphState) {
-  return JSON.parse(
-    JSON.stringify({
-      nodes: graphState.nodes,
-      edges: graphState.edges
-    })
-  );
-}
-
-function serializeGraphState(graphState) {
-  return JSON.stringify({
-    nodes: graphState.nodes,
-    edges: graphState.edges
-  });
-}
-
-function normalizeMopBaseSnapshot(value) {
-  if (!isGraphStateShape(value)) {
-    return null;
-  }
-
-  return cloneGraphState(normalizeGraphState(value));
-}
-
-function normalizeMopTargetState(actionType, targetState) {
-  if (actionType === MOP_ACTION_TYPE.TOGGLE_SOURCE) {
-    return targetState === true;
-  }
-
-  if (actionType === MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH) {
-    return normalizeTransferSwitchActiveSource(targetState);
-  }
-
-  if (actionType === MOP_ACTION_TYPE.SET_UPS_MODE) {
-    return normalizeUpsOperatingMode(targetState);
-  }
-
-  if (
-    actionType === MOP_ACTION_TYPE.DELETE_NODE ||
-    actionType === MOP_ACTION_TYPE.DELETE_EDGE
-  ) {
-    return "deleted";
-  }
-
-  return targetState === BREAKER_STATE.CLOSED
-    ? BREAKER_STATE.CLOSED
-    : BREAKER_STATE.OPEN;
-}
-
-function getDefaultMopActionText(actionType, targetId, targetState) {
-  if (actionType === MOP_ACTION_TYPE.TOGGLE_SOURCE) {
-    return targetState ? `Restored ${targetId}` : `Killed ${targetId}`;
-  }
-
-  if (actionType === MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH) {
-    return `Transfer ${targetId} to ${formatTransferSwitchActiveSource(targetState)}`;
-  }
-
-  if (actionType === MOP_ACTION_TYPE.SET_UPS_MODE) {
-    return `Set ${targetId} to ${formatUpsOperatingMode(targetState)}`;
-  }
-
-  if (
-    actionType === MOP_ACTION_TYPE.DELETE_NODE ||
-    actionType === MOP_ACTION_TYPE.DELETE_EDGE
-  ) {
-    return `Deleted ${targetId}`;
-  }
-
-  return targetState === BREAKER_STATE.CLOSED
-    ? `Closed Breaker ${targetId}`
-    : `Opened Breaker ${targetId}`;
-}
-
-function normalizeMopSteps(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((step) => {
-      if (
-        step === null ||
-        typeof step !== "object" ||
-        typeof step.targetId !== "string" ||
-        (step.actionType !== MOP_ACTION_TYPE.TOGGLE_SOURCE &&
-          step.actionType !== MOP_ACTION_TYPE.TOGGLE_BREAKER &&
-          step.actionType !== MOP_ACTION_TYPE.THROW_TRANSFER_SWITCH &&
-          step.actionType !== MOP_ACTION_TYPE.SET_UPS_MODE &&
-          step.actionType !== MOP_ACTION_TYPE.DELETE_NODE &&
-          step.actionType !== MOP_ACTION_TYPE.DELETE_EDGE) ||
-        !isGraphStateShape(step.snapshot)
-      ) {
-        return null;
-      }
-
-      const normalizedTargetState = normalizeMopTargetState(
-        step.actionType,
-        step.targetState
-      );
-
-      return {
-        targetId: step.targetId,
-        actionType: step.actionType,
-        targetState: normalizedTargetState,
-        actionText:
-          typeof step.actionText === "string" && step.actionText.trim() !== ""
-            ? step.actionText
-            : getDefaultMopActionText(
-                step.actionType,
-                step.targetId,
-                normalizedTargetState
-              ),
-        snapshot: cloneGraphState(normalizeGraphState(step.snapshot))
-      };
-    })
-    .filter(Boolean);
-}
-
-function normalizePersistedAppState(value) {
-  if (!isGraphStateShape(value)) {
-    return getBlankAppState();
-  }
-
-  const normalizedGraph = normalizeGraphState(value);
-  const mopBaseSnapshot = normalizeMopBaseSnapshot(value.mopBaseSnapshot);
-  const mopSteps = mopBaseSnapshot ? normalizeMopSteps(value.mopSteps) : [];
-
-  return {
-    nodes: normalizedGraph.nodes,
-    edges: normalizedGraph.edges,
-    mopSteps,
-    mopBaseSnapshot
-  };
-}
 
 function deriveMopPlaybackIndex(nodes, edges, mopBaseSnapshot, mopSteps) {
   if (!mopBaseSnapshot) {
@@ -264,27 +111,35 @@ function getNextBreakerState(currentState) {
 
 function readGraphStateFromStorage() {
   if (typeof window === "undefined") {
-    return getBlankAppState();
+    return createBlankAppState();
   }
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
 
     if (!raw) {
-      return getBlankAppState();
+      return createBlankAppState();
     }
 
-    const parsed = JSON.parse(raw);
+    const result = deserializePersistedAppStateJson(raw);
 
-    if (!isGraphStateShape(parsed)) {
-      console.error("Invalid persisted topology shape. Falling back to blank yard.");
-      return getBlankAppState();
+    if (!result.ok) {
+      const summary = formatPersistedAppStateValidationSummary(
+        result.issues,
+        "Persisted topology"
+      );
+      console.error(summary);
+      console.error("Persisted topology validation issues:", result.issues);
+      if (result.parseError) {
+        console.error(result.parseError);
+      }
+      return createBlankAppState();
     }
 
-    return normalizePersistedAppState(parsed);
+    return result.appState;
   } catch (error) {
     console.error("Failed to parse persisted topology. Falling back to blank yard.", error);
-    return getBlankAppState();
+    return createBlankAppState();
   }
 }
 
@@ -399,7 +254,7 @@ function App() {
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({
+        serializePersistedAppState({
           nodes,
           edges,
           mopSteps,
@@ -1237,10 +1092,9 @@ function App() {
   }, []);
 
   const onSaveToFile = useCallback(() => {
-    const topologyJson = JSON.stringify(
+    const topologyJson = serializePersistedAppState(
       { nodes, edges, mopSteps, mopBaseSnapshot },
-      null,
-      2
+      true
     );
     const topologyBlob = new Blob([topologyJson], {
       type: "application/json"
@@ -1271,13 +1125,23 @@ function App() {
 
       try {
         const fileText = await file.text();
-        const parsed = JSON.parse(fileText);
+        const result = deserializePersistedAppStateJson(fileText);
 
-        if (!isGraphStateShape(parsed)) {
-          throw new Error("Imported file does not contain { nodes: [], edges: [] }.");
+        if (!result.ok) {
+          const summary = formatPersistedAppStateValidationSummary(
+            result.issues,
+            "Topology import"
+          );
+          console.error(summary);
+          console.error("Topology import validation issues:", result.issues);
+          if (result.parseError) {
+            console.error(result.parseError);
+          }
+          window.alert(summary);
+          return;
         }
 
-        const normalizedAppState = normalizePersistedAppState(parsed);
+        const normalizedAppState = result.appState;
         setIsRecordingMop(false);
         setPendingMopAction(null);
         setActivePropertiesNodeId(null);
@@ -1296,7 +1160,7 @@ function App() {
         );
       } catch (error) {
         console.error("Topology import failed.", error);
-        window.alert("Invalid topology file. Import aborted.");
+        window.alert("Topology import rejected.\n\n1. Topology payload is not valid JSON.");
       }
     },
     [setNodes, setEdges]
