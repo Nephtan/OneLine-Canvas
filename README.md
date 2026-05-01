@@ -11,16 +11,17 @@ This thing is not here to flatter bad assumptions. If you close the wrong tie, p
 - Build arbitrary topologies from live canvas state using `@xyflow/react`; no hardcoded adjacency list, no fixed yard model.
 - Drop the current equipment set into the yard: utility feeds, generators, MVSG, PTX, switchboards, transfer switches, mechanical loads, and generic loads.
 - Draw connections as either breakers or solid wires.
-- Propagate source-aware power state across the graph and resolve `Live`, `Dead`, `Backfeed`, and `Phase Conflict`.
-- Detect unsynchronized source overlap and trip adjacent closed breakers through the current coarse protective-isolation model.
-- Control sources and reset tripped breakers from the docked SCADA panel.
+- Propagate source-aware and voltage-aware power state across the graph and resolve `Live`, `Dead`, `Backfeed`, `Phase Conflict`, and `Voltage Fault`.
+- Detect unsynchronized source overlap and clear it through the current ideal-selective protection model.
+- Control sources and reset tripped breakers from the docked command rail.
 - Record and replay linear MOP sequences through snapshot-based playback.
 - Export and import topology state, including recorded MOP snapshots.
+- Stress the engine with deterministic large-topology tests and a repeatable benchmark harness.
 - Build to a single self-contained `dist/index.html` for portable deployment.
 
 ## Current Status
 
-OneLine-Canvas is **topology-aware, source-aware, and conflict-aware today**. It already handles dynamic graph traversal, backfeed detection, phase-conflict detection, ATS source selection, SCADA control, and MOP playback on arbitrary user-built topologies.
+OneLine-Canvas is **topology-aware, source-aware, conflict-aware, and nominal-voltage-aware today**. It already handles dynamic graph traversal, backfeed detection, phase-conflict detection, PTX step-down and reverse propagation, ATS source selection, UPS directional behavior, command-rail control, and MOP playback on arbitrary user-built topologies.
 
 It is **not yet a full electrical-physics simulator**. Voltage-aware semantics, transformer behavior beyond metadata and labels, detailed breaker and switch ratings, richer relay coordination, and deeper protection logic are still in progress. If you want the live backlog instead of the cleaned-up sales pitch, read [OUTSTANDING.md](./OUTSTANDING.md).
 
@@ -71,7 +72,15 @@ This starts the local Vite dev server from the repo root.
 npm test
 ```
 
-The current automated suite focuses on the graph traversal and power-flow engine rather than DOM-heavy UI coverage.
+The current automated suite focuses on the graph traversal and power-flow engine rather than DOM-heavy UI coverage, including deterministic large-graph stress coverage for radial, main-tie-main, and mixed MV/LV corridors.
+
+### Run Engine Benchmarks
+
+```bash
+npm run bench:engine
+```
+
+This prints repeatable local timings for `createTopologyKey`, `evaluatePowerFlow`, and `evaluateProtectionState` across three fixed large-topology scenarios.
 
 ### Build The Portable Artifact
 
@@ -110,11 +119,11 @@ Use it as a **clean-install validation step**. In the current repo, normal Vite 
 
 ## Current Limitations
 
-- The engine is not yet voltage-aware across mixed 12.47 kV and 480 V corridors.
-- PTX exists in the current model, but transformer behavior is not yet simulated as full electrical step-down logic.
+- The engine now enforces nominal-voltage compatibility across mixed 12.47 kV and 480 V corridors, but it still lacks richer voltage windows, permissives, and voltage-fault-to-protection coupling.
+- PTX supports ideal voltage-ratio propagation and primary daisy-chains, but it does not yet model impedance, taps, vector groups, or current-based protection behavior.
 - Breakers and switches do not yet model detailed ratings, permissives, or realistic protection coordination.
 - ATS behavior currently supports manual source selection rather than full sensing, timers, or automatic retransfer policy.
-- UI coverage is still behind engine coverage; the deepest automated tests live in `src/engine/powerFlow.test.js`.
+- UI coverage is still behind engine coverage; the deepest automated tests live in `src/engine/powerFlow.test.js` and `src/engine/largeGraphPerformance.test.js`.
 
 For the unabridged list, go straight to [OUTSTANDING.md](./OUTSTANDING.md).
 

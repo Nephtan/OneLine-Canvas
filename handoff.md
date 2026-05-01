@@ -34,6 +34,7 @@
 | Working Tree | `working-tree` | `2026-05-01` | `Audit documentation backlog and prioritize import-validation hardening` | Implemented |
 | Working Tree | `working-tree` | `2026-05-01` | `Implement schema-v1 persistence validation and metadata round-trip tests` | Implemented |
 | Working Tree | `working-tree` | `2026-05-01` | `Consolidate left dock into single tabbed command rail` | Implemented |
+| Working Tree | `working-tree` | `2026-05-01` | `Add large-graph engine stress suite and benchmark harness` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -665,12 +666,13 @@
 - UPS directional behavior, battery-mode source identities and sync-group paralleling, wrong-voltage UPS faulting, top-vs-bottom switchboard bus landing, and UPS topology-key invalidation.
 - Graph normalization coverage for numeric voltage metadata and recognizable legacy voltage-string imports.
 - Topology-key cache stability for layout-only node-position changes, label-only renames, and manual edge midpoint routing metadata.
+- Large-graph engine coverage (`src/engine/largeGraphPerformance.test.js`) now exercises deterministic radial, main-tie-main, and mixed MV/LV scenarios plus large-topology key stability and invalidation behavior.
 
 ### Current Validation Gaps
 - No engine model/tests for synchronization permissives beyond shared sync-group identity (phase-angle drift, frequency slip, or voltage windows).
 - No selective relay coordination model (zone-selective interlocking, staged tripping, breaker priorities).
 - No lockout/reclose lifecycle model beyond manual reset via edge click cycle.
-- No formal large-graph stress/performance test suite for traversal cost ceilings.
+- Large-graph stress coverage now exists for traversal cost ceilings and memoization stability, but the repo still has no historical timing baseline or trend tracking across commits.
 - Persistence validation and metadata round-trip coverage now exist for schema-v1 payloads, legacy voltage/ratio/ATS migrations, malformed node and edge payloads, handle validation, and invalid MOP snapshots.
 - No dedicated UI tests yet cover SCADA rendering, MOP record/playback interaction, ATS selector behavior, remote actuation, edge-properties/delete-button workflows, snap-to-grid layout behavior, midpoint edge rerouting, or the breaker vs solid-wire connection tool.
 - No dedicated UI tests yet cover UPS mode buttons, switchboard bottom-edge connection hitboxes, or battery-availability editing flows.
@@ -757,3 +759,18 @@
 - Known gaps after this working-tree update:
   - The consolidated rail is intentionally optimized for desktop `1920x1080` and larger only; smaller-screen collapse patterns are not implemented yet.
   - The repo still has no dedicated UI automation around the new tabbed rail, source cards, UPS cards, validation cards, or tab-switching workflows.
+
+## Working Tree Update: Large-Graph Engine Performance Pass (`2026-05-01`)
+- Major additions:
+  - Added `src/engine/performanceTopologies.js` as a shared deterministic topology generator for three scale scenarios: a partially open radial feeder, a main-tie-main conflict yard, and a mixed MV/LV PTX + ATS + UPS corridor.
+  - Added `src/engine/largeGraphPerformance.test.js` so Vitest now exercises `createTopologyKey`, `evaluatePowerFlow`, and `evaluateProtectionState` against large generated graphs with sentinel assertions for live/dead propagation, phase-conflict clearing, voltage-fault containment, and layout-only cache stability.
+  - Added `src/engine/benchEngine.test.js` plus the public `npm run bench:engine` launcher in `scripts/bench-engine.mjs` to print repeatable local timings for topology-key generation, power-flow evaluation, and protection evaluation across fixed large-topology scenarios.
+  - Updated `README.md` and `OUTSTANDING.md` so the public docs now reflect the current voltage-aware engine behavior and the closed large-graph performance backlog item.
+- Current engine state:
+  - `evaluatePowerFlow(...)` remains the pure dynamic graph engine. This pass does not change traversal semantics; it proves the existing PTX, ATS, UPS, sync-group, and breaker/wire rules hold when the topology scales far beyond the hand-built regression fixtures.
+  - `evaluateProtectionState(...)` remains a second-pass selective resolver layered on top of the power-flow output. The new large main-tie-main scenario confirms the current root-penalty heuristic still chooses the tie breaker as the minimum conflict-clearing device at scale.
+  - `createTopologyKey(...)` remains the memoization boundary for `usePowerFlow`. The new large-topology tests now explicitly prove that layout-only node moves and edge midpoint routing changes keep the key stable while ATS throws and breaker-state changes invalidate it.
+- Known gaps after this working-tree update:
+  - The benchmark harness is intentionally advisory only. It provides machine-local regression visibility, not a cross-machine pass/fail budget or historical timing archive.
+  - Large-graph coverage is engine-only by design; the repo still lacks DOM-level automation for command-rail interaction, MOP playback, and other operator workflows.
+  - ATS automatic source-fail sensing, richer voltage permissives, and full protection-study realism remain future engine work.

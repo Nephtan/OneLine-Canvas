@@ -40,7 +40,7 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 ## Testing and Performance
 - [x] Add tests for canonical electrical metadata normalization and persistence across create, hydrate, export, and import flows.
 - [ ] Extend operator-facing `Fed From` coverage beyond the current breaker / wire / PTX / ATS / UPS lineup, which now includes handle-aware switchboard precedence and the `ExampleTopology/EXAMPLE-TOPOLOGY.json` regression fixture.
-- [ ] Add formal large-graph stress and performance coverage for traversal cost ceilings and memoization stability.
+- [x] Add formal large-graph stress and performance coverage for traversal cost ceilings and memoization stability.
 - [ ] Add higher-order tests for future protection-study semantics such as TCC discrimination, impedance-driven duty calculations, and device-family-specific settings.
 
 ## UI and Workflow Coverage
