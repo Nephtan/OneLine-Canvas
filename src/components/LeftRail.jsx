@@ -309,7 +309,6 @@ function BuildTabContent({
     <div className="space-y-3">
       <SectionCard
         eyebrow="Build Controls"
-        title="Connection tool and yard I/O stay in the first view so operators can build without hunting."
       >
         <div className="space-y-3">
           <div>
@@ -380,7 +379,6 @@ function BuildTabContent({
 
       <SectionCard
         eyebrow="Equipment Palette"
-        title="Drop live gear into the yard from a denser two-column grid."
       >
         <div className="grid grid-cols-2 gap-2">
           {EQUIPMENT_OPTIONS.map((equipment) => (
@@ -400,7 +398,6 @@ function SourceControlSection({ sourceRows, onToggleSourceOnline }) {
   return (
     <SectionCard
       eyebrow="Source Telemetry"
-      title="Root feeds stay grouped as cards so the single rail can stay narrow without clipping."
     >
       {sourceRows.length === 0 ? (
         <div className="text-xs text-slate-500">
@@ -478,7 +475,6 @@ function UpsControlSection({ upsRows, onChangeUpsOperatingMode }) {
   return (
     <SectionCard
       eyebrow="UPS Lineup"
-      title="Critical-power devices keep their live mode throws and battery visibility in the operate tab."
     >
       {upsRows.length === 0 ? (
         <div className="text-xs text-slate-500">
@@ -567,7 +563,6 @@ function BreakerResetSection({ trippedBreakerCount, onResetAllBreakers }) {
   return (
     <SectionCard
       eyebrow="Protection Reset"
-      title="Mechanical breaker reset stays available without consuming a dedicated full-height panel."
     >
       <button
         type="button"
@@ -601,7 +596,6 @@ function MopRecorderSection({
   return (
     <SectionCard
       eyebrow="MOP Recorder"
-      title="Recording and playback stay in the operate tab but now live in the same scroll region as the rest of SCADA."
       actions={
         <button
           type="button"
@@ -1260,9 +1254,6 @@ function LeftRail({
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.24em] text-cyan-300/80">
               OneLine Command Rail
-            </div>
-            <div className="mt-1 text-xs text-slate-100">
-              Build, operate, and audit the yard from one 1080p-safe dock.
             </div>
             <div className="mt-2 text-[11px] text-slate-400">
               Physics stays in the engine. This rail only drives the controls.
