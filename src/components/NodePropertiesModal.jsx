@@ -27,6 +27,11 @@ import {
   normalizeUpsOperatingMode,
   UPS_OPERATING_MODE
 } from "../topology/ups";
+import {
+  AUTOMATION_CONTROL_MODE,
+  formatAutomationControlMode,
+  normalizeAutomationControlMode
+} from "../topology/automationControl";
 
 const NODE_TYPE_LABEL = {
   utility: "Utility Source",
@@ -142,7 +147,7 @@ function buildDraftFromNode(node) {
   };
 
   if (isSourceNodeType(node.type)) {
-    return {
+    const sourceDraft = {
       ...baseDraft,
       syncGroup: normalizedNodeData.syncGroup ?? "",
       isSourceOnline: normalizedNodeData.isSourceOnline !== false,
@@ -150,6 +155,12 @@ function buildDraftFromNode(node) {
         normalizedNodeData.availableFaultCurrentAmps
       )
     };
+
+    if (node.type === "generator") {
+      sourceDraft.controlMode = normalizeAutomationControlMode(normalizedNodeData.controlMode);
+    }
+
+    return sourceDraft;
   }
 
   if (node.type === "mvsg") {
@@ -204,6 +215,7 @@ function buildDraftFromNode(node) {
         normalizedNodeData.batteryRuntimeMinutes
       ),
       batteryAvailable: normalizedNodeData.batteryAvailable !== false,
+      controlMode: normalizeAutomationControlMode(normalizedNodeData.controlMode),
       operatingMode: normalizeUpsOperatingMode(normalizedNodeData.operatingMode),
       syncGroup: normalizedNodeData.syncGroup ?? ""
     };
@@ -290,7 +302,8 @@ function CheckboxField({
   checked,
   onChange,
   helperText,
-  checkboxLabel
+  checkboxLabel,
+  disabled = false
 }) {
   return (
     <label htmlFor={id} className="block">
@@ -301,12 +314,15 @@ function CheckboxField({
             id={id}
             type="checkbox"
             checked={checked}
+            disabled={disabled}
             onChange={(event) => {
               onChange(event.target.checked);
             }}
             onPointerDown={stopCanvasEvent}
             onKeyDown={stopCanvasEvent}
-            className="nodrag h-4 w-4 rounded border-slate-500 bg-slate-900 text-cyan-300 focus:ring-cyan-300/60"
+            className={`nodrag h-4 w-4 rounded border-slate-500 bg-slate-900 text-cyan-300 focus:ring-cyan-300/60 ${
+              disabled ? "cursor-not-allowed opacity-60" : ""
+            }`}
           />
           {checkboxLabel}
         </label>
@@ -370,6 +386,7 @@ function NodePropertiesModal({ node, onApply, onClose }) {
   const isSourceNode = isSourceNodeType(node.type);
   const isTransformer = isTransformerNodeType(node.type);
   const isUps = isUpsNodeType(node.type);
+  const isGenerator = node.type === "generator";
   const isMvsg = node.type === "mvsg";
   const isLoad = node.type === "load";
   const isSwitchboard = node.type === "switchboard";
@@ -405,6 +422,15 @@ function NodePropertiesModal({ node, onApply, onClose }) {
   const transferSwitchControlMode = isTransferSwitch
     ? normalizeTransferSwitchControlMode(draft.controlMode)
     : TRANSFER_SWITCH_CONTROL_MODE.MANUAL;
+  const generatorControlMode = isGenerator
+    ? normalizeAutomationControlMode(draft.controlMode)
+    : AUTOMATION_CONTROL_MODE.MANUAL;
+  const upsControlMode = isUps
+    ? normalizeAutomationControlMode(draft.controlMode)
+    : AUTOMATION_CONTROL_MODE.MANUAL;
+  const upsInputSenseState = isUps
+    ? node.data?.upsSense?.input ?? "Dead"
+    : "Dead";
   const nominalVoltageError =
     !isTransformer && nominalVoltage === null ? "Enter a positive voltage in volts." : "";
   const primaryVoltageError =
@@ -518,6 +544,9 @@ function NodePropertiesModal({ node, onApply, onClose }) {
       nextProperties.syncGroup = trimTextOrEmpty(draft.syncGroup);
       nextProperties.isSourceOnline = draft.isSourceOnline;
       nextProperties.availableFaultCurrentAmps = availableFaultCurrentAmps;
+      if (isGenerator) {
+        nextProperties.controlMode = generatorControlMode;
+      }
     }
 
     if (isMvsg) {
@@ -561,6 +590,7 @@ function NodePropertiesModal({ node, onApply, onClose }) {
       nextProperties.kvaRating = kvaRating;
       nextProperties.batteryRuntimeMinutes = batteryRuntimeMinutes;
       nextProperties.batteryAvailable = draft.batteryAvailable;
+      nextProperties.controlMode = upsControlMode;
       nextProperties.operatingMode = normalizeUpsOperatingMode(draft.operatingMode);
       nextProperties.syncGroup = trimTextOrEmpty(draft.syncGroup);
     }
@@ -704,6 +734,47 @@ function NodePropertiesModal({ node, onApply, onClose }) {
 
           {isSourceNode ? (
             <>
+              {isGenerator ? (
+                <>
+                  <SelectField
+                    id="node-properties-generator-control-mode"
+                    label="Control Mode"
+                    value={draft.controlMode}
+                    onChange={(nextValue) => {
+                      setDraft((currentDraft) => ({
+                        ...currentDraft,
+                        controlMode: nextValue
+                      }));
+                    }}
+                    options={[
+                      {
+                        value: AUTOMATION_CONTROL_MODE.MANUAL,
+                        label: formatAutomationControlMode(AUTOMATION_CONTROL_MODE.MANUAL)
+                      },
+                      {
+                        value: AUTOMATION_CONTROL_MODE.AUTO,
+                        label: formatAutomationControlMode(AUTOMATION_CONTROL_MODE.AUTO)
+                      }
+                    ]}
+                    helperText="Auto mode allows ATS-driven generator start. Manual mode keeps direct operator control."
+                  />
+                  <div className="rounded border border-slate-700 bg-slate-950/60 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                      Automation Status
+                    </div>
+                    <div className="mt-2 text-sm text-slate-100">
+                      {generatorControlMode === AUTOMATION_CONTROL_MODE.AUTO
+                        ? draft.isSourceOnline
+                          ? "Auto Running"
+                          : "Auto Standby"
+                        : "Manual Control"}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Auto generators start from ATS automation only in this pass.
+                    </div>
+                  </div>
+                </>
+              ) : null}
               <TextInputField
                 id="node-properties-sync-group"
                 label="Sync Group"
@@ -720,13 +791,18 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                 id="node-properties-source-online"
                 label="Source Status"
                 checked={draft.isSourceOnline}
+                disabled={isGenerator && generatorControlMode === AUTOMATION_CONTROL_MODE.AUTO}
                 onChange={(nextValue) => {
                   setDraft((currentDraft) => ({
                     ...currentDraft,
                     isSourceOnline: nextValue
                   }));
                 }}
-                helperText="Offline sources remain on the canvas but stop seeding the graph."
+                helperText={
+                  isGenerator && generatorControlMode === AUTOMATION_CONTROL_MODE.AUTO
+                    ? "Read-only in Auto mode. ATS-driven generator automation manages the online state."
+                    : "Offline sources remain on the canvas but stop seeding the graph."
+                }
                 checkboxLabel="Source is online"
               />
               <NumberInputField
@@ -995,9 +1071,41 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                 helperText="Examples: Double Conversion UPS, Rotary UPS, Line Interactive UPS."
               />
               <SelectField
+                id="node-properties-ups-control-mode"
+                label="Control Mode"
+                value={draft.controlMode}
+                onChange={(nextValue) => {
+                  setDraft((currentDraft) => ({
+                    ...currentDraft,
+                    controlMode: nextValue
+                  }));
+                }}
+                options={[
+                  {
+                    value: AUTOMATION_CONTROL_MODE.MANUAL,
+                    label: formatAutomationControlMode(AUTOMATION_CONTROL_MODE.MANUAL)
+                  },
+                  {
+                    value: AUTOMATION_CONTROL_MODE.AUTO,
+                    label: formatAutomationControlMode(AUTOMATION_CONTROL_MODE.AUTO)
+                  }
+                ]}
+                helperText="Auto mode follows sensed line input and battery availability. Manual mode preserves direct operator control and sync-group throws."
+              />
+              <div className="rounded border border-slate-700 bg-slate-950/60 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                  Line Sense
+                </div>
+                <div className="mt-2 text-sm text-slate-100">{upsInputSenseState}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Runtime line status from the engine. Auto mode reacts to this sensed state.
+                </div>
+              </div>
+              <SelectField
                 id="node-properties-ups-mode"
                 label="Operating Mode"
                 value={draft.operatingMode}
+                disabled={upsControlMode === AUTOMATION_CONTROL_MODE.AUTO}
                 onChange={(nextValue) => {
                   setDraft((currentDraft) => ({
                     ...currentDraft,
@@ -1018,7 +1126,11 @@ function NodePropertiesModal({ node, onApply, onClose }) {
                     label: formatUpsOperatingMode(UPS_OPERATING_MODE.BYPASS)
                   }
                 ]}
-                helperText="Manual v1 operating state used by the directed UPS traversal model."
+                helperText={
+                  upsControlMode === AUTOMATION_CONTROL_MODE.AUTO
+                    ? "Read-only in Auto mode. UPS automation switches between Normal and Battery from sensed line status."
+                    : "Manual v1 operating state used by the directed UPS traversal model."
+                }
               />
               <CheckboxField
                 id="node-properties-battery-available"

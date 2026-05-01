@@ -26,10 +26,17 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 - [x] Add timer or delay semantics for transfer and retransfer behavior.
 - [ ] Model richer ATS or STS policies such as permissive logic, neutral positions, or non-overlap timing where needed.
 
+## Generator Automation
+- [x] Add ATS-driven generator autostart so standby generators can come online before ATS emergency transfer when utility fails.
+- [ ] Expand generator automation beyond ATS-driven start into broader source orchestration, auto-stop policy, and non-ATS outage workflows where needed.
+- [ ] Model generator warmup, cooldown, and other timing semantics instead of the current immediate online transition.
+
 ## UPS Modeling
 - [ ] Expand the first-pass UPS model beyond one line input / one load output into separate rectifier, static bypass, and maintenance-bypass interfaces where that realism matters.
-- [ ] Add automatic UPS source-fail sensing, battery-to-line transfer policy, and manual / automatic retransfer behavior instead of mode selection only.
+- [x] Add automatic UPS source-fail sensing plus automatic battery-to-line return behavior instead of mode selection only.
+- [ ] Add richer UPS return-policy options beyond the current fixed automatic return to normal in Auto mode.
 - [ ] Model UPS battery depletion, charger state, and runtime consumption instead of the current binary `batteryAvailable` flag.
+- [ ] Decide whether future UPS automation should support timers, staged transfer policy, or more detailed sync-group behavior beyond the current manual mode fan-out.
 
 ## Validation and Import Safety
 - [x] Replace shallow graph-shape import validation with deep schema and version-aware validation for node and edge payloads.

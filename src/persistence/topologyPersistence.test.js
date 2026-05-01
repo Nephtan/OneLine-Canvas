@@ -9,6 +9,7 @@ import {
 import { TRANSFER_SWITCH_RETRANSFER_POLICY } from "../topology/transferSwitch";
 import { TRANSFORMER_HANDLE_ID } from "../topology/transformer";
 import { UPS_HANDLE_ID, UPS_OPERATING_MODE } from "../topology/ups";
+import { AUTOMATION_CONTROL_MODE } from "../topology/automationControl";
 import { normalizeGraphState } from "../nodes/nodeData";
 import {
   createBlankAppState,
@@ -50,6 +51,7 @@ function generatorNode(id, data = {}) {
       label: id,
       nominalVoltage: 480,
       isSourceOnline: true,
+      controlMode: AUTOMATION_CONTROL_MODE.MANUAL,
       syncGroup: "",
       ...data
     }
@@ -126,6 +128,7 @@ function upsNode(id, data = {}) {
       nominalVoltage: 480,
       upsClass: "Double Conversion UPS",
       batteryAvailable: true,
+      controlMode: AUTOMATION_CONTROL_MODE.MANUAL,
       operatingMode: UPS_OPERATING_MODE.NORMAL,
       syncGroup: "",
       ...data
@@ -476,6 +479,69 @@ describe("topology persistence validation", () => {
     });
   });
 
+  it("normalizes generator and UPS automation control defaults when the fields are missing", () => {
+    const payload = createValidVersionedPayload();
+    delete payload.nodes[1].data.controlMode;
+    delete payload.nodes[6].data.controlMode;
+
+    const result = parsePersistedAppState(payload);
+
+    expect(result.ok).toBe(true);
+    expect(result.appState.nodes.find((node) => node.id === "generator-a").data.controlMode).toBe(
+      AUTOMATION_CONTROL_MODE.MANUAL
+    );
+    expect(result.appState.nodes.find((node) => node.id === "ups-a").data.controlMode).toBe(
+      AUTOMATION_CONTROL_MODE.MANUAL
+    );
+  });
+
+  it("accepts generator and UPS auto control modes", () => {
+    const payload = createValidVersionedPayload();
+    payload.nodes = payload.nodes.map((node) => {
+      if (node.id === "generator-a") {
+        return generatorNode("generator-a", {
+          controlMode: AUTOMATION_CONTROL_MODE.AUTO
+        });
+      }
+
+      if (node.id === "ups-a") {
+        return upsNode("ups-a", {
+          controlMode: AUTOMATION_CONTROL_MODE.AUTO
+        });
+      }
+
+      return node;
+    });
+
+    const validation = validatePersistedAppState(payload);
+    const result = parsePersistedAppState(payload);
+
+    expect(validation.isValid).toBe(true);
+    expect(result.ok).toBe(true);
+    expect(result.appState.nodes.find((node) => node.id === "generator-a").data.controlMode).toBe(
+      AUTOMATION_CONTROL_MODE.AUTO
+    );
+    expect(result.appState.nodes.find((node) => node.id === "ups-a").data.controlMode).toBe(
+      AUTOMATION_CONTROL_MODE.AUTO
+    );
+  });
+
+  it("rejects invalid generator and UPS control modes", () => {
+    const payload = createValidVersionedPayload();
+    payload.nodes[1].data.controlMode = "bad-mode";
+    payload.nodes[6].data.controlMode = "bad-mode";
+
+    const validation = validatePersistedAppState(payload);
+
+    expect(validation.isValid).toBe(false);
+    expect(validation.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "payload.nodes[1].data.controlMode" }),
+        expect.objectContaining({ path: "payload.nodes[6].data.controlMode" })
+      ])
+    );
+  });
+
   it("rejects invalid ATS automation enums and negative or non-numeric delay values", () => {
     const payload = createValidVersionedPayload();
     payload.nodes = payload.nodes.map((node) =>
@@ -556,7 +622,8 @@ describe("topology persistence round-trip", () => {
         }),
         generatorNode("generator-a", {
           availableFaultCurrentAmps: 42000,
-          syncGroup: "EMERGENCY-A"
+          syncGroup: "EMERGENCY-A",
+          controlMode: AUTOMATION_CONTROL_MODE.AUTO
         }),
         mvsgNode("mvsg-a", { ratedCurrentAmps: 3000 }),
         ptxNode("ptx-a", { transformerImpedancePercent: 5.75 }),
@@ -573,6 +640,7 @@ describe("topology persistence round-trip", () => {
           ratedCurrentAmps: 800,
           kvaRating: 750,
           batteryRuntimeMinutes: 15,
+          controlMode: AUTOMATION_CONTROL_MODE.AUTO,
           syncGroup: "UPS-BUS"
         }),
         loadNode("load-a", { ratedCurrentAmps: 225 }),
@@ -665,6 +733,9 @@ describe("topology persistence round-trip", () => {
 
       expect(nodeById.get("utility-a").data.availableFaultCurrentAmps).toBe(65000);
       expect(nodeById.get("generator-a").data.availableFaultCurrentAmps).toBe(42000);
+      expect(nodeById.get("generator-a").data.controlMode).toBe(
+        AUTOMATION_CONTROL_MODE.AUTO
+      );
       expect(nodeById.get("mvsg-a").data.ratedCurrentAmps).toBe(3000);
       expect(nodeById.get("ptx-a").data.transformerImpedancePercent).toBe(5.75);
       expect(nodeById.get("switchboard-a").data.ratedCurrentAmps).toBe(4000);
@@ -680,6 +751,9 @@ describe("topology persistence round-trip", () => {
       expect(nodeById.get("ups-a").data.ratedCurrentAmps).toBe(800);
       expect(nodeById.get("ups-a").data.kvaRating).toBe(750);
       expect(nodeById.get("ups-a").data.batteryRuntimeMinutes).toBe(15);
+      expect(nodeById.get("ups-a").data.controlMode).toBe(
+        AUTOMATION_CONTROL_MODE.AUTO
+      );
       expect(nodeById.get("load-a").data.ratedCurrentAmps).toBe(225);
       expect(nodeById.get("mech-a").data.ratedCurrentAmps).toBe(140);
 

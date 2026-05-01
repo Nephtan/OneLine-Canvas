@@ -23,8 +23,10 @@ import BreakerEdge from "./edges/BreakerEdge";
 import StandardEdge from "./edges/StandardEdge";
 import { getDefaultEdgeData, normalizeEdgeData } from "./edges/edgeData";
 import usePowerFlow from "./hooks/usePowerFlow";
+import useGeneratorAutomation from "./hooks/useGeneratorAutomation";
 import useTransferSwitchAutomation from "./hooks/useTransferSwitchAutomation";
-import { EDGE_POWER_STATE } from "./engine/powerFlow";
+import useUpsAutomation from "./hooks/useUpsAutomation";
+import { EDGE_POWER_STATE, normalizeSyncGroup } from "./engine/powerFlow";
 import { BREAKER_STATE, EDGE_DEVICE_KIND, TRIP_REASON } from "./engine/protectionModel";
 import LeftRail, { DRAG_MIME_TYPE } from "./components/LeftRail";
 import EdgePropertiesModal from "./components/EdgePropertiesModal";
@@ -61,12 +63,17 @@ import {
   normalizeUpsOperatingMode
 } from "./topology/ups";
 import {
+  AUTOMATION_CONTROL_MODE,
+  normalizeAutomationControlMode
+} from "./topology/automationControl";
+import {
   EDGE_TYPE,
   normalizeCanvasEdgeType
 } from "./topology/edgeTypes";
 import { translateEdgesForRigidNodeMove } from "./topology/edgePathOptions";
 import { CANVAS_GRID_SIZE, CANVAS_SNAP_GRID } from "./canvas/grid";
 import { createPastedSubgraph, extractSelectedSubgraph } from "./canvas/clipboard";
+import { collectUpsSyncGroupTargetIds } from "./hooks/upsAutomation";
 
 const nodeTypes = {
   utility: UtilityNode,
@@ -299,6 +306,8 @@ function App() {
     fedFromNodeIdByNodeId,
     propagatingVoltagesByNodeId,
     transferSwitchSenseByNodeId,
+    transferSwitchSupplyByNodeId,
+    upsSenseByNodeId,
     edgePowerStateByEdgeId,
     faultSummaries,
     protectionTripEdgeIds,
@@ -471,6 +480,37 @@ function App() {
     [setNodes]
   );
 
+  const applySourceOnlineState = useCallback(
+    (nodeIds, nextIsSourceOnline) => {
+      const targetNodeIdSet = new Set(
+        Array.isArray(nodeIds) ? nodeIds : [nodeIds]
+      );
+
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (!targetNodeIdSet.has(node.id) || !isSourceNodeType(node.type)) {
+            return node;
+          }
+
+          const nodeData = normalizeNodeData(node);
+
+          if ((nodeData.isSourceOnline !== false) === nextIsSourceOnline) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...nodeData,
+              isSourceOnline: nextIsSourceOnline
+            }
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
   const applyTransferSwitchControlMode = useCallback(
     (nodeId, nextControlMode) => {
       const normalizedNextControlMode = normalizeTransferSwitchControlMode(
@@ -502,13 +542,72 @@ function App() {
     [setNodes]
   );
 
-  const applyUpsOperatingMode = useCallback(
-    (nodeId, nextOperatingMode) => {
-      const normalizedNextOperatingMode = normalizeUpsOperatingMode(nextOperatingMode);
+  const applyGeneratorControlMode = useCallback(
+    (nodeId, nextControlMode) => {
+      const normalizedNextControlMode = normalizeAutomationControlMode(nextControlMode);
+
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (node.id !== nodeId || node.type !== "generator") {
+            return node;
+          }
+
+          const nodeData = normalizeNodeData(node);
+
+          if (nodeData.controlMode === normalizedNextControlMode) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...nodeData,
+              controlMode: normalizedNextControlMode
+            }
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
+  const applyUpsControlMode = useCallback(
+    (nodeId, nextControlMode) => {
+      const normalizedNextControlMode = normalizeAutomationControlMode(nextControlMode);
 
       setNodes((currentNodes) =>
         currentNodes.map((node) => {
           if (node.id !== nodeId || !isUpsNodeType(node.type)) {
+            return node;
+          }
+
+          const nodeData = normalizeNodeData(node);
+
+          if (nodeData.controlMode === normalizedNextControlMode) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...nodeData,
+              controlMode: normalizedNextControlMode
+            }
+          };
+        })
+      );
+    },
+    [setNodes]
+  );
+
+  const applyUpsOperatingMode = useCallback(
+    (nodeIds, nextOperatingMode) => {
+      const normalizedNextOperatingMode = normalizeUpsOperatingMode(nextOperatingMode);
+      const targetNodeIdSet = new Set(Array.isArray(nodeIds) ? nodeIds : [nodeIds]);
+
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => {
+          if (!targetNodeIdSet.has(node.id) || !isUpsNodeType(node.type)) {
             return node;
           }
 
@@ -679,6 +778,14 @@ function App() {
       }
 
       const sourceNodeData = normalizeNodeData(sourceNode);
+      if (
+        sourceNode.type === "generator" &&
+        normalizeAutomationControlMode(sourceNodeData.controlMode) ===
+          AUTOMATION_CONTROL_MODE.AUTO
+      ) {
+        return;
+      }
+
       const nextIsSourceOnline = !(sourceNodeData.isSourceOnline !== false);
 
       if (isRecordingMop) {
@@ -695,6 +802,26 @@ function App() {
       applySourceOnlineToggle(nodeId);
     },
     [nodes, isRecordingMop, applySourceOnlineToggle]
+  );
+
+  const handleGeneratorControlModeRequest = useCallback(
+    (nodeId, nextControlMode) => {
+      const generatorNode = nodes.find((node) => node.id === nodeId);
+
+      if (!generatorNode || generatorNode.type !== "generator") {
+        return;
+      }
+
+      const generatorNodeData = normalizeNodeData(generatorNode);
+      const normalizedNextControlMode = normalizeAutomationControlMode(nextControlMode);
+
+      if (generatorNodeData.controlMode === normalizedNextControlMode) {
+        return;
+      }
+
+      applyGeneratorControlMode(nodeId, normalizedNextControlMode);
+    },
+    [nodes, applyGeneratorControlMode]
   );
 
   const handleTransferSwitchThrowRequest = useCallback(
@@ -756,12 +883,41 @@ function App() {
     [nodes, applyTransferSwitchControlMode]
   );
 
+  useGeneratorAutomation({
+    nodes,
+    transferSwitchSenseByNodeId,
+    transferSwitchSupplyByNodeId,
+    onStartGenerators: (generatorNodeIds) => {
+      applySourceOnlineState(generatorNodeIds, true);
+    }
+  });
+
   const { pendingByNodeId: transferSwitchAutomationByNodeId } =
     useTransferSwitchAutomation({
       nodes,
       transferSwitchSenseByNodeId,
       onThrow: applyTransferSwitchActiveSource
     });
+
+  const handleUpsControlModeRequest = useCallback(
+    (nodeId, nextControlMode) => {
+      const upsNode = nodes.find((node) => node.id === nodeId);
+
+      if (!upsNode || !isUpsNodeType(upsNode.type)) {
+        return;
+      }
+
+      const upsNodeData = normalizeNodeData(upsNode);
+      const normalizedNextControlMode = normalizeAutomationControlMode(nextControlMode);
+
+      if (upsNodeData.controlMode === normalizedNextControlMode) {
+        return;
+      }
+
+      applyUpsControlMode(nodeId, normalizedNextControlMode);
+    },
+    [nodes, applyUpsControlMode]
+  );
 
   const handleUpsOperatingModeRequest = useCallback(
     (nodeId, nextOperatingMode) => {
@@ -773,8 +929,32 @@ function App() {
 
       const upsNodeData = normalizeNodeData(upsNode);
       const normalizedNextOperatingMode = normalizeUpsOperatingMode(nextOperatingMode);
+      const targetUpsNodeIds = collectUpsSyncGroupTargetIds(
+        nodes,
+        nodeId,
+        normalizeSyncGroup
+      );
 
-      if (upsNodeData.operatingMode === normalizedNextOperatingMode) {
+      if (
+        normalizeAutomationControlMode(upsNodeData.controlMode) ===
+        AUTOMATION_CONTROL_MODE.AUTO
+      ) {
+        return;
+      }
+
+      if (targetUpsNodeIds.length === 0) {
+        return;
+      }
+
+      const hasModeChange = targetUpsNodeIds.some((targetUpsNodeId) => {
+        const targetUpsNode = nodes.find((node) => node.id === targetUpsNodeId);
+        return (
+          targetUpsNode &&
+          normalizeNodeData(targetUpsNode).operatingMode !== normalizedNextOperatingMode
+        );
+      });
+
+      if (!hasModeChange) {
         return;
       }
 
@@ -789,10 +969,16 @@ function App() {
         });
       }
 
-      applyUpsOperatingMode(nodeId, normalizedNextOperatingMode);
+      applyUpsOperatingMode(targetUpsNodeIds, normalizedNextOperatingMode);
     },
     [nodes, isRecordingMop, applyUpsOperatingMode]
   );
+
+  useUpsAutomation({
+    nodes,
+    upsSenseByNodeId,
+    onModeChange: applyUpsOperatingMode
+  });
 
   const resetAllTrippedBreakers = useCallback(() => {
     setEdges((currentEdges) => {
@@ -1143,6 +1329,7 @@ function App() {
           transferSwitchSense: transferSwitchSenseByNodeId[node.id] ?? null,
           transferSwitchAutomation:
             transferSwitchAutomationByNodeId[node.id] ?? null,
+          upsSense: upsSenseByNodeId[node.id] ?? null,
           onRenameLabel: (nextLabel) => renameNodeLabel(node.id, nextLabel),
           onToggleSourceOnline:
             isSourceNodeType(node.type)
@@ -1158,7 +1345,13 @@ function App() {
           onChangeControlMode: isTransferSwitchNodeType(node.type)
             ? (nextControlMode) =>
                 handleTransferSwitchControlModeRequest(node.id, nextControlMode)
-            : undefined,
+            : node.type === "generator"
+              ? (nextControlMode) =>
+                  handleGeneratorControlModeRequest(node.id, nextControlMode)
+              : isUpsNodeType(node.type)
+                ? (nextControlMode) =>
+                    handleUpsControlModeRequest(node.id, nextControlMode)
+                : undefined,
           onChangeOperatingMode: isUpsNodeType(node.type)
             ? (nextOperatingMode) =>
                 handleUpsOperatingModeRequest(node.id, nextOperatingMode)
@@ -1179,11 +1372,14 @@ function App() {
     propagatingVoltagesByNodeId,
     transferSwitchSenseByNodeId,
     transferSwitchAutomationByNodeId,
+    upsSenseByNodeId,
     renameNodeLabel,
     handleSourceToggleRequest,
     changeNodeSyncGroup,
     handleTransferSwitchThrowRequest,
     handleTransferSwitchControlModeRequest,
+    handleGeneratorControlModeRequest,
+    handleUpsControlModeRequest,
     handleUpsOperatingModeRequest,
     openNodeProperties,
     handleDeleteNodeRequest
@@ -1521,8 +1717,8 @@ function App() {
   );
 
   const activePropertiesNode = useMemo(
-    () => nodes.find((node) => node.id === activePropertiesNodeId) ?? null,
-    [nodes, activePropertiesNodeId]
+    () => renderNodes.find((node) => node.id === activePropertiesNodeId) ?? null,
+    [renderNodes, activePropertiesNodeId]
   );
   const nodeLabelById = useMemo(
     () =>
@@ -1562,7 +1758,10 @@ function App() {
           isPersistenceBlocked={isPersistenceBlocked}
           onFocusValidationIssue={focusValidationIssue}
           onToggleSourceOnline={handleSourceToggleRequest}
+          onChangeSourceControlMode={handleGeneratorControlModeRequest}
           onChangeUpsOperatingMode={handleUpsOperatingModeRequest}
+          onChangeUpsControlMode={handleUpsControlModeRequest}
+          upsSenseByNodeId={upsSenseByNodeId}
           onResetAllBreakers={resetAllTrippedBreakers}
           hasMopBaseSnapshot={Boolean(mopBaseSnapshot)}
           isRecordingMop={isRecordingMop}

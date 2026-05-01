@@ -2,7 +2,9 @@ import { useMemo, useRef } from "react";
 import {
   createTopologyKey,
   evaluatePowerFlow,
-  evaluateTransferSwitchSense
+  evaluateTransferSwitchSense,
+  evaluateTransferSwitchSupply,
+  evaluateUpsSense
 } from "../engine/powerFlow";
 import { evaluateProtectionState } from "../engine/protection";
 
@@ -19,6 +21,8 @@ function usePowerFlow(nodes, edges) {
       fedFromNodeIdByNodeId: {},
       propagatingVoltagesByNodeId: {},
       transferSwitchSenseByNodeId: {},
+      transferSwitchSupplyByNodeId: {},
+      upsSenseByNodeId: {},
       edgePowerStateByEdgeId: {},
       faultSummaries: [],
       protectionTripEdgeIds: [],
@@ -34,10 +38,14 @@ function usePowerFlow(nodes, edges) {
 
     const powerFlowResult = evaluatePowerFlow(nodes, edges);
     const transferSwitchSenseByNodeId = evaluateTransferSwitchSense(nodes, edges);
+    const transferSwitchSupplyByNodeId = evaluateTransferSwitchSupply(nodes, edges);
+    const upsSenseByNodeId = evaluateUpsSense(nodes, edges);
     const protectionResult = evaluateProtectionState(nodes, edges, powerFlowResult);
     const nextResult = {
       ...powerFlowResult,
       transferSwitchSenseByNodeId,
+      transferSwitchSupplyByNodeId,
+      upsSenseByNodeId,
       ...protectionResult
     };
     cacheRef.current = {

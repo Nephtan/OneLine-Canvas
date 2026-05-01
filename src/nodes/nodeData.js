@@ -13,6 +13,10 @@ import {
   isUpsNodeType,
   normalizeUpsOperatingMode
 } from "../topology/ups";
+import {
+  AUTOMATION_CONTROL_MODE,
+  normalizeAutomationControlMode
+} from "../topology/automationControl";
 import { normalizeCanvasEdgeType } from "../topology/edgeTypes";
 import {
   DEFAULT_LOW_VOLTAGE,
@@ -55,6 +59,7 @@ const DEFAULT_NODE_DATA_BY_TYPE = {
     label: `Generator ${labelSuffix}`,
     nominalVoltage: DEFAULT_MEDIUM_VOLTAGE,
     isSourceOnline: true,
+    controlMode: AUTOMATION_CONTROL_MODE.MANUAL,
     syncGroup: "",
     faultType: FAULT_TYPE.NONE,
     availableFaultCurrentAmps: undefined
@@ -88,6 +93,7 @@ const DEFAULT_NODE_DATA_BY_TYPE = {
     nominalVoltage: DEFAULT_LOW_VOLTAGE,
     upsClass: "Double Conversion UPS",
     batteryAvailable: true,
+    controlMode: AUTOMATION_CONTROL_MODE.MANUAL,
     operatingMode: "normal",
     syncGroup: "",
     faultType: FAULT_TYPE.NONE
@@ -233,6 +239,11 @@ export function normalizeNodeData(node) {
     nextData.availableFaultCurrentAmps = normalizeOptionalPositiveInteger(
       currentData.availableFaultCurrentAmps
     );
+    if (node.type === "generator") {
+      nextData.controlMode = normalizeAutomationControlMode(currentData.controlMode);
+    } else {
+      delete nextData.controlMode;
+    }
   } else {
     if (isUpsNodeType(node.type)) {
       nextData.syncGroup =
@@ -264,7 +275,6 @@ export function normalizeNodeData(node) {
     );
   } else {
     delete nextData.activeSource;
-    delete nextData.controlMode;
     delete nextData.retransferPolicy;
     delete nextData.transferDelaySeconds;
     delete nextData.retransferDelaySeconds;
@@ -298,6 +308,7 @@ export function normalizeNodeData(node) {
     nextData.upsClass =
       normalizeOptionalTrimmedText(currentData.upsClass, fallbackData.upsClass);
     nextData.batteryAvailable = currentData.batteryAvailable !== false;
+    nextData.controlMode = normalizeAutomationControlMode(currentData.controlMode);
     nextData.operatingMode = normalizeUpsOperatingMode(currentData.operatingMode);
     nextData.ratedCurrentAmps = normalizeOptionalPositiveInteger(
       currentData.ratedCurrentAmps
@@ -334,6 +345,14 @@ export function normalizeNodeData(node) {
     );
   } else {
     delete nextData.transformerImpedancePercent;
+  }
+
+  if (
+    node.type !== "generator" &&
+    !isUpsNodeType(node.type) &&
+    !isTransferSwitchNodeType(node.type)
+  ) {
+    delete nextData.controlMode;
   }
 
   return nextData;

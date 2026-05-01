@@ -11,6 +11,11 @@ import {
   normalizeUpsOperatingMode
 } from "../topology/ups";
 import { getNodeShellClassName, NODE_SIZE_FAMILY } from "./nodeLayout";
+import {
+  AUTOMATION_CONTROL_MODE,
+  formatAutomationControlMode,
+  normalizeAutomationControlMode
+} from "../topology/automationControl";
 
 function WarningIcon({ className }) {
   return (
@@ -52,12 +57,36 @@ function formatOptionalNumber(value, suffix = "") {
   return typeof value === "number" && Number.isFinite(value) ? `${value}${suffix}` : "--";
 }
 
+function getSenseBadgeClassName(powerState) {
+  if (powerState === NODE_POWER_STATE.VOLTAGE_FAULT) {
+    return "border-purple-400 bg-purple-950/70 text-purple-100";
+  }
+
+  if (powerState === NODE_POWER_STATE.PHASE_CONFLICT) {
+    return "border-red-400 bg-red-950/70 text-red-100";
+  }
+
+  if (powerState === NODE_POWER_STATE.BACKFEED) {
+    return "border-orange-400 bg-orange-950/70 text-orange-100";
+  }
+
+  if (powerState === NODE_POWER_STATE.LIVE) {
+    return "border-emerald-400/80 bg-emerald-500/15 text-emerald-100";
+  }
+
+  return "border-slate-700 bg-slate-950 text-slate-300";
+}
+
 function UpsNode({ data }) {
   const powerState = data.powerState ?? NODE_POWER_STATE.DEAD;
   const fedFromLabel = data.fedFromLabel ?? null;
   const propagatingVoltages = data.propagatingVoltages ?? [];
   const operatingMode = normalizeUpsOperatingMode(data.operatingMode);
   const batteryAvailable = data.batteryAvailable !== false;
+  const controlMode = normalizeAutomationControlMode(data.controlMode);
+  const isAutoMode = controlMode === AUTOMATION_CONTROL_MODE.AUTO;
+  const inputSenseState = data.upsSense?.input ?? NODE_POWER_STATE.DEAD;
+  const controlModeLabel = formatAutomationControlMode(controlMode);
 
   const shellClassName =
     powerState === NODE_POWER_STATE.VOLTAGE_FAULT
@@ -122,10 +151,22 @@ function UpsNode({ data }) {
       : "border-slate-700 bg-slate-950 text-slate-400";
   }
 
+  function getControlModeButtonClassName(isSelected) {
+    return isSelected
+      ? "border-cyan-300/80 bg-cyan-500/15 text-cyan-100"
+      : "border-slate-700 bg-slate-950 text-slate-400";
+  }
+
   function handleModeClick(event, nextOperatingMode) {
     event.preventDefault();
     event.stopPropagation();
     data.onChangeOperatingMode?.(nextOperatingMode);
+  }
+
+  function handleControlModeClick(event, nextControlMode) {
+    event.preventDefault();
+    event.stopPropagation();
+    data.onChangeControlMode?.(nextControlMode);
   }
 
   return (
@@ -159,6 +200,44 @@ function UpsNode({ data }) {
       <div className="mt-3 rounded border border-slate-800 bg-slate-950/80 px-3 py-3">
         <div className="flex items-center justify-between gap-2">
           <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">
+            Control Mode
+          </div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-300">
+            {controlModeLabel}
+          </div>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={(event) => {
+              handleControlModeClick(event, AUTOMATION_CONTROL_MODE.MANUAL);
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getControlModeButtonClassName(
+              !isAutoMode
+            )}`}
+          >
+            Manual
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              handleControlModeClick(event, AUTOMATION_CONTROL_MODE.AUTO);
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getControlModeButtonClassName(
+              isAutoMode
+            )}`}
+          >
+            Auto
+          </button>
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">
             Operating Mode
           </div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-slate-300">
@@ -168,48 +247,67 @@ function UpsNode({ data }) {
         <div className="mt-2 grid grid-cols-3 gap-2">
           <button
             type="button"
+            disabled={isAutoMode}
             onClick={(event) => {
               handleModeClick(event, UPS_OPERATING_MODE.NORMAL);
             }}
             onPointerDown={(event) => {
               event.stopPropagation();
             }}
-            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getModeButtonClassName(
-              UPS_OPERATING_MODE.NORMAL
-            )}`}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
+              isAutoMode
+                ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                : getModeButtonClassName(UPS_OPERATING_MODE.NORMAL)
+            }`}
           >
             Normal
           </button>
           <button
             type="button"
+            disabled={isAutoMode}
             onClick={(event) => {
               handleModeClick(event, UPS_OPERATING_MODE.BATTERY);
             }}
             onPointerDown={(event) => {
               event.stopPropagation();
             }}
-            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getModeButtonClassName(
-              UPS_OPERATING_MODE.BATTERY
-            )}`}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
+              isAutoMode
+                ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                : getModeButtonClassName(UPS_OPERATING_MODE.BATTERY)
+            }`}
           >
             Battery
           </button>
           <button
             type="button"
+            disabled={isAutoMode}
             onClick={(event) => {
               handleModeClick(event, UPS_OPERATING_MODE.BYPASS);
             }}
             onPointerDown={(event) => {
               event.stopPropagation();
             }}
-            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getModeButtonClassName(
-              UPS_OPERATING_MODE.BYPASS
-            )}`}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
+              isAutoMode
+                ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                : getModeButtonClassName(UPS_OPERATING_MODE.BYPASS)
+            }`}
           >
             Bypass
           </button>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] uppercase tracking-[0.14em]">
+          <div className="rounded border border-slate-800 bg-slate-900/80 px-2 py-2">
+            <div className="text-slate-500">Line Sense</div>
+            <div
+              className={`mt-2 inline-flex rounded border px-2 py-1 ${getSenseBadgeClassName(
+                inputSenseState
+              )}`}
+            >
+              {inputSenseState}
+            </div>
+          </div>
           <div className="rounded border border-slate-800 bg-slate-900/80 px-2 py-2">
             <div className="text-slate-500">Battery</div>
             <div className={batteryAvailable ? "mt-1 text-emerald-200" : "mt-1 text-rose-200"}>

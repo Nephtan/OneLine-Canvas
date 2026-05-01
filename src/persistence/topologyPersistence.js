@@ -17,6 +17,7 @@ import { TRANSFER_SWITCH_RETRANSFER_POLICY } from "../topology/transferSwitch";
 import { normalizeGraphState } from "../nodes/nodeData";
 import { TRANSFORMER_HANDLE_ID } from "../topology/transformer";
 import { UPS_HANDLE_ID, UPS_OPERATING_MODE } from "../topology/ups";
+import { AUTOMATION_CONTROL_MODE } from "../topology/automationControl";
 
 export const TOPOLOGY_SCHEMA_VERSION = 1;
 
@@ -65,6 +66,9 @@ const SUPPORTED_TRANSFER_SWITCH_CONTROL_MODES = new Set(
 );
 const SUPPORTED_TRANSFER_SWITCH_RETRANSFER_POLICIES = new Set(
   Object.values(TRANSFER_SWITCH_RETRANSFER_POLICY)
+);
+const SUPPORTED_AUTOMATION_CONTROL_MODES = new Set(
+  Object.values(AUTOMATION_CONTROL_MODE)
 );
 const SUPPORTED_UPS_OPERATING_MODES = new Set(Object.values(UPS_OPERATING_MODE));
 const SUPPORTED_TRANSFORMER_HANDLES = new Set(Object.values(TRANSFORMER_HANDLE_ID));
@@ -373,6 +377,16 @@ function validateNodeData(node, nodePath, issues, context, isLegacyPayload) {
       context,
       issueOptions
     );
+    if (node.type === "generator") {
+      validateOptionalEnumField(
+        data.controlMode,
+        SUPPORTED_AUTOMATION_CONTROL_MODES,
+        `${dataPath}.controlMode`,
+        issues,
+        context,
+        issueOptions
+      );
+    }
     return;
   }
 
@@ -511,6 +525,14 @@ function validateNodeData(node, nodePath, issues, context, isLegacyPayload) {
     validateOptionalBooleanField(
       data.batteryAvailable,
       `${dataPath}.batteryAvailable`,
+      issues,
+      context,
+      issueOptions
+    );
+    validateOptionalEnumField(
+      data.controlMode,
+      SUPPORTED_AUTOMATION_CONTROL_MODES,
+      `${dataPath}.controlMode`,
       issues,
       context,
       issueOptions

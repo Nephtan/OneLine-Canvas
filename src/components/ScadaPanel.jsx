@@ -7,6 +7,11 @@ import {
   isUpsNodeType,
   UPS_OPERATING_MODE
 } from "../topology/ups";
+import {
+  AUTOMATION_CONTROL_MODE,
+  formatAutomationControlMode,
+  normalizeAutomationControlMode
+} from "../topology/automationControl";
 
 const SOURCE_TYPE_LABEL = {
   utility: "UTILITY",
@@ -79,6 +84,12 @@ function getValidationSeverityBadgeClassName(severity) {
   return "border-slate-600 bg-slate-900/90 text-slate-300";
 }
 
+function getControlModeButtonClassName(isSelected) {
+  return isSelected
+    ? "border-cyan-300/80 bg-cyan-500/15 text-cyan-100"
+    : "border-slate-700 bg-slate-950 text-slate-400";
+}
+
 function formatValidationIssueContextLabel(issue, nodeLabelById, edgeLabelById) {
   const labels = [];
 
@@ -123,7 +134,10 @@ function ScadaPanel({
   isPersistenceBlocked,
   onFocusValidationIssue,
   onToggleSourceOnline,
+  onChangeSourceControlMode,
   onChangeUpsOperatingMode,
+  onChangeUpsControlMode,
+  upsSenseByNodeId,
   onResetAllBreakers,
   hasMopBaseSnapshot,
   isRecordingMop,
@@ -147,6 +161,10 @@ function ScadaPanel({
             label: nodeData.label,
             syncGroup: nodeData.syncGroup ?? "",
             isSourceOnline: nodeData.isSourceOnline !== false,
+            controlMode:
+              node.type === "generator"
+                ? normalizeAutomationControlMode(nodeData.controlMode)
+                : AUTOMATION_CONTROL_MODE.MANUAL,
             powerState:
               powerStateByNodeId[node.id] ?? NODE_POWER_STATE.DEAD
           };
@@ -173,8 +191,10 @@ function ScadaPanel({
           return {
             id: node.id,
             label: nodeData.label,
+            controlMode: normalizeAutomationControlMode(nodeData.controlMode),
             operatingMode: nodeData.operatingMode,
             batteryAvailable: nodeData.batteryAvailable !== false,
+            inputSenseState: upsSenseByNodeId[node.id]?.input ?? NODE_POWER_STATE.DEAD,
             powerState: powerStateByNodeId[node.id] ?? NODE_POWER_STATE.DEAD
           };
         })
@@ -187,7 +207,7 @@ function ScadaPanel({
 
           return upsA.id.localeCompare(upsB.id);
         }),
-    [nodes, powerStateByNodeId]
+    [nodes, powerStateByNodeId, upsSenseByNodeId]
   );
 
   const trippedBreakerCount = useMemo(
@@ -310,75 +330,134 @@ function ScadaPanel({
         ) : (
           <div className="max-h-56 overflow-y-auto px-3 py-2">
             <div className="space-y-2">
-              {upsRows.map((upsRow) => (
-                <div
-                  key={upsRow.id}
-                  className="rounded border border-slate-800 bg-slate-950/80 px-3 py-2"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-xs text-slate-100">{upsRow.label}</div>
-                      <div className="mt-1 truncate text-[10px] text-slate-500">{upsRow.id}</div>
+              {upsRows.map((upsRow) => {
+                const isAutoMode =
+                  normalizeAutomationControlMode(upsRow.controlMode) ===
+                  AUTOMATION_CONTROL_MODE.AUTO;
+
+                return (
+                  <div
+                    key={upsRow.id}
+                    className="rounded border border-slate-800 bg-slate-950/80 px-3 py-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs text-slate-100">{upsRow.label}</div>
+                        <div className="mt-1 truncate text-[10px] text-slate-500">{upsRow.id}</div>
+                      </div>
+                      <div
+                        className={`inline-flex rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getPowerStateBadgeClassName(
+                          upsRow.powerState
+                        )}`}
+                      >
+                        {upsRow.powerState}
+                      </div>
                     </div>
-                    <div
-                      className={`inline-flex rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getPowerStateBadgeClassName(
-                        upsRow.powerState
-                      )}`}
-                    >
-                      {upsRow.powerState}
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.14em]">
+                      <div className="text-slate-500">
+                        Control:{" "}
+                        <span className="text-slate-200">
+                          {formatAutomationControlMode(upsRow.controlMode)}
+                        </span>
+                      </div>
+                      <div
+                        className={`inline-flex rounded border px-2 py-1 ${getPowerStateBadgeClassName(
+                          upsRow.inputSenseState
+                        )}`}
+                      >
+                        Line {upsRow.inputSenseState}
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onChangeUpsControlMode?.(upsRow.id, AUTOMATION_CONTROL_MODE.MANUAL);
+                        }}
+                        className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${getControlModeButtonClassName(
+                          !isAutoMode
+                        )}`}
+                      >
+                        Manual
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onChangeUpsControlMode?.(upsRow.id, AUTOMATION_CONTROL_MODE.AUTO);
+                        }}
+                        className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${getControlModeButtonClassName(
+                          isAutoMode
+                        )}`}
+                      >
+                        Auto
+                      </button>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.14em]">
+                      <div className="text-slate-500">
+                        Mode:{" "}
+                        <span className="text-slate-200">
+                          {formatUpsOperatingMode(upsRow.operatingMode)}
+                        </span>
+                      </div>
+                      <div
+                        className={upsRow.batteryAvailable ? "text-emerald-300" : "text-rose-300"}
+                      >
+                        {upsRow.batteryAvailable ? "Battery Ready" : "Battery Unavailable"}
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        disabled={isAutoMode}
+                        onClick={() => {
+                          onChangeUpsOperatingMode?.(upsRow.id, UPS_OPERATING_MODE.NORMAL);
+                        }}
+                        className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${
+                          isAutoMode
+                            ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                            : upsRow.operatingMode === UPS_OPERATING_MODE.NORMAL
+                              ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
+                              : "border-slate-700 bg-slate-900 text-slate-300"
+                        }`}
+                      >
+                        Normal
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isAutoMode}
+                        onClick={() => {
+                          onChangeUpsOperatingMode?.(upsRow.id, UPS_OPERATING_MODE.BATTERY);
+                        }}
+                        className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${
+                          isAutoMode
+                            ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                            : upsRow.operatingMode === UPS_OPERATING_MODE.BATTERY
+                              ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
+                              : "border-slate-700 bg-slate-900 text-slate-300"
+                        }`}
+                      >
+                        Battery
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isAutoMode}
+                        onClick={() => {
+                          onChangeUpsOperatingMode?.(upsRow.id, UPS_OPERATING_MODE.BYPASS);
+                        }}
+                        className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${
+                          isAutoMode
+                            ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                            : upsRow.operatingMode === UPS_OPERATING_MODE.BYPASS
+                              ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
+                              : "border-slate-700 bg-slate-900 text-slate-300"
+                        }`}
+                      >
+                        Bypass
+                      </button>
                     </div>
                   </div>
-                  <div className="mt-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-[0.14em]">
-                    <div className="text-slate-500">
-                      Mode: <span className="text-slate-200">{formatUpsOperatingMode(upsRow.operatingMode)}</span>
-                    </div>
-                    <div className={upsRow.batteryAvailable ? "text-emerald-300" : "text-rose-300"}>
-                      {upsRow.batteryAvailable ? "Battery Ready" : "Battery Unavailable"}
-                    </div>
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onChangeUpsOperatingMode?.(upsRow.id, UPS_OPERATING_MODE.NORMAL);
-                      }}
-                      className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${
-                        upsRow.operatingMode === UPS_OPERATING_MODE.NORMAL
-                          ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
-                          : "border-slate-700 bg-slate-900 text-slate-300"
-                      }`}
-                    >
-                      Normal
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onChangeUpsOperatingMode?.(upsRow.id, UPS_OPERATING_MODE.BATTERY);
-                      }}
-                      className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${
-                        upsRow.operatingMode === UPS_OPERATING_MODE.BATTERY
-                          ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
-                          : "border-slate-700 bg-slate-900 text-slate-300"
-                      }`}
-                    >
-                      Battery
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onChangeUpsOperatingMode?.(upsRow.id, UPS_OPERATING_MODE.BYPASS);
-                      }}
-                      className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.14em] ${
-                        upsRow.operatingMode === UPS_OPERATING_MODE.BYPASS
-                          ? "border-amber-300/80 bg-amber-400/20 text-amber-100"
-                          : "border-slate-700 bg-slate-900 text-slate-300"
-                      }`}
-                    >
-                      Bypass
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -765,62 +844,114 @@ function ScadaPanel({
               </tr>
             </thead>
             <tbody>
-              {sourceRows.map((sourceRow) => (
-                <tr
-                  key={sourceRow.id}
-                  className="border-b border-slate-800/80 align-top last:border-b-0"
-                >
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-[0.16em] ${getTypeBadgeClassName(sourceRow.type)}`}
+              {sourceRows.map((sourceRow) => {
+                const isGenerator = sourceRow.type === "generator";
+                const isAutoMode =
+                  isGenerator &&
+                  normalizeAutomationControlMode(sourceRow.controlMode) ===
+                    AUTOMATION_CONTROL_MODE.AUTO;
+
+                return (
+                  <tr
+                    key={sourceRow.id}
+                    className="border-b border-slate-800/80 align-top last:border-b-0"
+                  >
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-[0.16em] ${getTypeBadgeClassName(sourceRow.type)}`}
+                        >
+                          {SOURCE_TYPE_LABEL[sourceRow.type] ?? sourceRow.type}
+                        </span>
+                        <span
+                          className={`text-[10px] uppercase tracking-[0.16em] ${
+                            sourceRow.isSourceOnline
+                              ? "text-emerald-300/80"
+                              : "text-slate-500"
+                          }`}
+                        >
+                          {sourceRow.isSourceOnline ? "Online" : "Offline"}
+                        </span>
+                      </div>
+                      <div className="mt-1 truncate text-slate-100">{sourceRow.label}</div>
+                      <div className="mt-1 truncate text-[10px] text-slate-500">
+                        {sourceRow.id}
+                      </div>
+                      {isGenerator ? (
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onChangeSourceControlMode?.(
+                                sourceRow.id,
+                                AUTOMATION_CONTROL_MODE.MANUAL
+                              );
+                            }}
+                            className={`rounded border px-2 py-1 text-[9px] uppercase tracking-[0.14em] ${getControlModeButtonClassName(
+                              !isAutoMode
+                            )}`}
+                          >
+                            Manual
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onChangeSourceControlMode?.(
+                                sourceRow.id,
+                                AUTOMATION_CONTROL_MODE.AUTO
+                              );
+                            }}
+                            className={`rounded border px-2 py-1 text-[9px] uppercase tracking-[0.14em] ${getControlModeButtonClassName(
+                              isAutoMode
+                            )}`}
+                          >
+                            Auto
+                          </button>
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-2 py-2">
+                      <div className="truncate rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200">
+                        {sourceRow.syncGroup || "--"}
+                      </div>
+                      {isGenerator ? (
+                        <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                          {formatAutomationControlMode(sourceRow.controlMode)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-2 py-2">
+                      <div
+                        className={`inline-flex rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getPowerStateBadgeClassName(sourceRow.powerState)}`}
                       >
-                        {SOURCE_TYPE_LABEL[sourceRow.type] ?? sourceRow.type}
-                      </span>
-                      <span
-                        className={`text-[10px] uppercase tracking-[0.16em] ${
-                          sourceRow.isSourceOnline
-                            ? "text-emerald-300/80"
-                            : "text-slate-500"
+                        {sourceRow.powerState}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        disabled={isAutoMode}
+                        onClick={() => {
+                          onToggleSourceOnline?.(sourceRow.id);
+                        }}
+                        className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
+                          isAutoMode
+                            ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+                            : sourceRow.isSourceOnline
+                              ? "border-rose-300/70 bg-rose-500/20 text-rose-100"
+                              : "border-emerald-300/70 bg-emerald-500/20 text-emerald-100"
                         }`}
                       >
-                        {sourceRow.isSourceOnline ? "Online" : "Offline"}
-                      </span>
-                    </div>
-                    <div className="mt-1 truncate text-slate-100">{sourceRow.label}</div>
-                    <div className="mt-1 truncate text-[10px] text-slate-500">
-                      {sourceRow.id}
-                    </div>
-                  </td>
-                  <td className="px-2 py-2">
-                    <div className="truncate rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200">
-                      {sourceRow.syncGroup || "--"}
-                    </div>
-                  </td>
-                  <td className="px-2 py-2">
-                    <div
-                      className={`inline-flex rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${getPowerStateBadgeClassName(sourceRow.powerState)}`}
-                    >
-                      {sourceRow.powerState}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onToggleSourceOnline(sourceRow.id);
-                      }}
-                      className={`rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
-                        sourceRow.isSourceOnline
-                          ? "border-rose-300/70 bg-rose-500/20 text-rose-100"
-                          : "border-emerald-300/70 bg-emerald-500/20 text-emerald-100"
-                      }`}
-                    >
-                      {sourceRow.isSourceOnline ? "Kill Feed" : "Restore Feed"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                        {isAutoMode
+                          ? "Auto"
+                          : sourceRow.isSourceOnline
+                            ? "Kill Feed"
+                            : "Restore Feed"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

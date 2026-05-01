@@ -4,7 +4,9 @@ import {
   NODE_POWER_STATE,
   createTopologyKey,
   evaluatePowerFlow,
-  evaluateTransferSwitchSense
+  evaluateTransferSwitchSupply,
+  evaluateTransferSwitchSense,
+  evaluateUpsSense
 } from "./powerFlow";
 import { evaluateProtectionState } from "./protection";
 import { BREAKER_STATE } from "./protectionModel";
@@ -17,6 +19,7 @@ import {
   UPS_HANDLE_ID,
   UPS_OPERATING_MODE
 } from "../topology/ups";
+import { AUTOMATION_CONTROL_MODE } from "../topology/automationControl";
 import { EDGE_TYPE as CANVAS_EDGE_TYPE } from "../topology/edgeTypes";
 import {
   DEFAULT_LOW_VOLTAGE,
@@ -34,7 +37,8 @@ function utilityNode(id, options = {}) {
       nominalVoltage: options.nominalVoltage ?? DEFAULT_MEDIUM_VOLTAGE,
       syncGroup: options.syncGroup ?? "",
       isSourceOnline:
-        options.isSourceOnline === undefined ? true : options.isSourceOnline
+        options.isSourceOnline === undefined ? true : options.isSourceOnline,
+      controlMode: options.controlMode ?? AUTOMATION_CONTROL_MODE.MANUAL
     },
     position: { x: 0, y: 0 }
   };
@@ -127,6 +131,7 @@ function upsNode(id, options = {}) {
       nominalVoltage: options.nominalVoltage ?? DEFAULT_LOW_VOLTAGE,
       batteryAvailable:
         options.batteryAvailable === undefined ? true : options.batteryAvailable,
+      controlMode: options.controlMode ?? AUTOMATION_CONTROL_MODE.MANUAL,
       operatingMode: options.operatingMode ?? UPS_OPERATING_MODE.NORMAL,
       syncGroup: options.syncGroup ?? ""
     },
@@ -1823,6 +1828,131 @@ describe("evaluateTransferSwitchSense", () => {
   });
 });
 
+describe("evaluateTransferSwitchSupply", () => {
+  it("identifies a generator-backed emergency source even when the generator is offline", () => {
+    const nodes = [
+      utilityNode("utility-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        isSourceOnline: false
+      }),
+      generatorNode("gen-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        isSourceOnline: false
+      }),
+      transferSwitchNode("ats-a")
+    ];
+    const edges = [
+      breakerEdge("primary-feed", "utility-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.PRIMARY
+      }),
+      breakerEdge("emergency-feed", "gen-a", "ats-a", BREAKER_STATE.CLOSED, {
+        targetHandle: TRANSFER_SWITCH_HANDLE_ID.EMERGENCY
+      })
+    ];
+
+    const transferSwitchSupplyByNodeId = evaluateTransferSwitchSupply(nodes, edges);
+
+    expect(transferSwitchSupplyByNodeId["ats-a"]).toMatchObject({
+      primary: [
+        {
+          nodeId: "utility-a",
+          kind: "utility",
+          nominalVoltage: DEFAULT_LOW_VOLTAGE
+        }
+      ],
+      emergency: [
+        {
+          nodeId: "gen-a",
+          kind: "generator",
+          nominalVoltage: DEFAULT_LOW_VOLTAGE
+        }
+      ]
+    });
+  });
+});
+
+describe("evaluateUpsSense", () => {
+  it("senses a live UPS input even while the UPS is running on battery", () => {
+    const nodes = [
+      utilityNode("utility-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      upsNode("ups-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        operatingMode: UPS_OPERATING_MODE.BATTERY,
+        batteryAvailable: false
+      }),
+      switchboardNode("swbd-a")
+    ];
+    const edges = [
+      breakerEdge("ups-input", "utility-a", "ups-a", BREAKER_STATE.CLOSED, {
+        targetHandle: UPS_HANDLE_ID.INPUT
+      }),
+      breakerEdge("ups-output", "ups-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-in"
+      })
+    ];
+
+    const upsSenseByNodeId = evaluateUpsSense(nodes, edges);
+    const { powerStateByNodeId } = evaluatePowerFlow(nodes, edges);
+
+    expect(upsSenseByNodeId["ups-a"]).toEqual({
+      input: NODE_POWER_STATE.LIVE
+    });
+    expect(powerStateByNodeId["swbd-a"]).toBe(NODE_POWER_STATE.DEAD);
+  });
+
+  it("reports dead, wrong-voltage, and phase-conflict UPS line input states", () => {
+    const deadInputNodes = [
+      utilityNode("utility-a", {
+        nominalVoltage: DEFAULT_LOW_VOLTAGE,
+        isSourceOnline: false
+      }),
+      upsNode("ups-a")
+    ];
+    const deadInputEdges = [
+      breakerEdge("ups-input", "utility-a", "ups-a", BREAKER_STATE.CLOSED, {
+        targetHandle: UPS_HANDLE_ID.INPUT
+      })
+    ];
+
+    expect(evaluateUpsSense(deadInputNodes, deadInputEdges)["ups-a"].input).toBe(
+      NODE_POWER_STATE.DEAD
+    );
+
+    const wrongVoltageNodes = [generatorNode("gen-a"), upsNode("ups-a")];
+    const wrongVoltageEdges = [
+      breakerEdge("ups-input", "gen-a", "ups-a", BREAKER_STATE.CLOSED, {
+        targetHandle: UPS_HANDLE_ID.INPUT
+      })
+    ];
+
+    expect(evaluateUpsSense(wrongVoltageNodes, wrongVoltageEdges)["ups-a"].input).toBe(
+      NODE_POWER_STATE.VOLTAGE_FAULT
+    );
+
+    const phaseConflictNodes = [
+      utilityNode("utility-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      generatorNode("gen-a", { nominalVoltage: DEFAULT_LOW_VOLTAGE }),
+      switchboardNode("swbd-a"),
+      upsNode("ups-a")
+    ];
+    const phaseConflictEdges = [
+      breakerEdge("utility-feed", "utility-a", "swbd-a", BREAKER_STATE.CLOSED),
+      breakerEdge("generator-feed", "gen-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        targetHandle: "switchboard-bus-bottom-in"
+      }),
+      breakerEdge("ups-input", "swbd-a", "ups-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: "switchboard-bus-out",
+        targetHandle: UPS_HANDLE_ID.INPUT
+      })
+    ];
+
+    expect(
+      evaluateUpsSense(phaseConflictNodes, phaseConflictEdges)["ups-a"].input
+    ).toBe(NODE_POWER_STATE.PHASE_CONFLICT);
+  });
+});
+
 describe("createTopologyKey", () => {
   it("changes when utility source online flag changes", () => {
     const nodesOnline = [utilityNode("utility-a", { isSourceOnline: true }), mvsgNode("mvsg-a")];
@@ -2001,6 +2131,47 @@ describe("createTopologyKey", () => {
     const keyBatteryDown = createTopologyKey(nodesBatteryDown, []);
 
     expect(keyBatteryReady).not.toBe(keyBatteryDown);
+  });
+
+  it("ignores generator and UPS control-mode changes that do not alter conductive topology", () => {
+    const generatorNodesManual = [
+      generatorNode("gen-a", { controlMode: AUTOMATION_CONTROL_MODE.MANUAL }),
+      mvsgNode("mvsg-a")
+    ];
+    const generatorNodesAuto = [
+      generatorNode("gen-a", { controlMode: AUTOMATION_CONTROL_MODE.AUTO }),
+      mvsgNode("mvsg-a")
+    ];
+    const generatorEdges = [breakerEdge("e1", "gen-a", "mvsg-a", BREAKER_STATE.CLOSED)];
+
+    expect(createTopologyKey(generatorNodesManual, generatorEdges)).toBe(
+      createTopologyKey(generatorNodesAuto, generatorEdges)
+    );
+
+    const upsNodesManual = [
+      upsNode("ups-a", {
+        controlMode: AUTOMATION_CONTROL_MODE.MANUAL,
+        operatingMode: UPS_OPERATING_MODE.NORMAL
+      }),
+      switchboardNode("swbd-a")
+    ];
+    const upsNodesAuto = [
+      upsNode("ups-a", {
+        controlMode: AUTOMATION_CONTROL_MODE.AUTO,
+        operatingMode: UPS_OPERATING_MODE.NORMAL
+      }),
+      switchboardNode("swbd-a")
+    ];
+    const upsEdges = [
+      breakerEdge("e1", "ups-a", "swbd-a", BREAKER_STATE.CLOSED, {
+        sourceHandle: UPS_HANDLE_ID.OUTPUT,
+        targetHandle: "switchboard-bus-in"
+      })
+    ];
+
+    expect(createTopologyKey(upsNodesManual, upsEdges)).toBe(
+      createTopologyKey(upsNodesAuto, upsEdges)
+    );
   });
 
   it("changes when an edge handle changes", () => {

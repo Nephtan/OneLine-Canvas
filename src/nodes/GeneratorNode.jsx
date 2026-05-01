@@ -5,6 +5,11 @@ import NodeDeleteButton from "../components/NodeDeleteButton";
 import NodePropertiesButton from "../components/NodePropertiesButton";
 import { formatVoltageValue } from "../electrical/voltage";
 import { getNodeShellClassName, NODE_SIZE_FAMILY } from "./nodeLayout";
+import {
+  AUTOMATION_CONTROL_MODE,
+  formatAutomationControlMode,
+  normalizeAutomationControlMode
+} from "../topology/automationControl";
 
 function WarningIcon({ className }) {
   return (
@@ -47,7 +52,15 @@ function GeneratorNode({ data }) {
   const fedFromLabel = data.fedFromLabel ?? null;
   const propagatingVoltages = data.propagatingVoltages ?? [];
   const isSourceOnline = data.isSourceOnline !== false;
+  const controlMode = normalizeAutomationControlMode(data.controlMode);
+  const isAutoMode = controlMode === AUTOMATION_CONTROL_MODE.AUTO;
   const isTrulyOffline = !isSourceOnline && powerState === NODE_POWER_STATE.DEAD;
+  const controlModeLabel = formatAutomationControlMode(controlMode);
+  const automationStatusLabel = isAutoMode
+    ? isSourceOnline
+      ? "Auto Running"
+      : "Auto Standby"
+    : "Manual Control";
 
   const shellClassName =
     powerState === NODE_POWER_STATE.VOLTAGE_FAULT
@@ -104,6 +117,10 @@ function GeneratorNode({ data }) {
   const statusChipClassName = isSourceOnline
     ? "border border-lime-300/70 bg-lime-500/20 text-lime-100"
     : "border border-slate-500 bg-slate-800/80 text-slate-300";
+  const modeButtonClassName = (isSelected) =>
+    isSelected
+      ? "border-cyan-300/80 bg-cyan-500/15 text-cyan-100"
+      : "border-slate-700 bg-slate-950 text-slate-400";
 
   return (
     <div
@@ -139,6 +156,54 @@ function GeneratorNode({ data }) {
       </div>
       <div className={`mt-2 text-xs ${isTrulyOffline ? "text-slate-500" : "text-slate-300"}`}>
         {formatVoltageValue(data.nominalVoltage)}
+      </div>
+      <div className="mt-3 rounded border border-slate-800 bg-slate-950/80 px-3 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[9px] uppercase tracking-[0.18em] text-slate-500">
+            Control Mode
+          </div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-300">
+            {controlModeLabel}
+          </div>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              data.onChangeControlMode?.(AUTOMATION_CONTROL_MODE.MANUAL);
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${modeButtonClassName(
+              !isAutoMode
+            )}`}
+          >
+            Manual
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              data.onChangeControlMode?.(AUTOMATION_CONTROL_MODE.AUTO);
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            className={`nodrag rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${modeButtonClassName(
+              isAutoMode
+            )}`}
+          >
+            Auto
+          </button>
+        </div>
+        <div className="mt-3 rounded border border-slate-800 bg-slate-900/80 px-2 py-2 text-[10px] uppercase tracking-[0.14em]">
+          <div className="text-slate-500">Automation</div>
+          <div className="mt-1 text-slate-100">{automationStatusLabel}</div>
+        </div>
       </div>
       <div className="mt-2">
         <div className={`text-[9px] uppercase tracking-[0.18em] ${isTrulyOffline ? "text-slate-500" : "text-slate-400"}`}>
@@ -191,18 +256,21 @@ function GeneratorNode({ data }) {
       </div>
       <button
         type="button"
+        disabled={isAutoMode}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
           data.onToggleSourceOnline?.();
         }}
         className={`nodrag mt-2 w-full rounded border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
-          isSourceOnline
+          isAutoMode
+            ? "cursor-not-allowed border-slate-800 bg-slate-950 text-slate-600"
+            : isSourceOnline
             ? "border-rose-300/70 bg-rose-500/20 text-rose-100"
             : "border-lime-300/70 bg-lime-500/20 text-lime-100"
         }`}
       >
-        {isSourceOnline ? "Kill Feed" : "Restore Feed"}
+        {isAutoMode ? "Auto Start Armed" : isSourceOnline ? "Kill Feed" : "Restore Feed"}
       </button>
 
       <Handle

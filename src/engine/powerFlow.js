@@ -46,6 +46,7 @@ export const EDGE_POWER_STATE = {
 };
 
 const TRANSFER_SWITCH_SENSE_PREFIX = "__transfer-switch-sense__";
+const UPS_SENSE_PREFIX = "__ups-sense__";
 const FED_FROM_ARRIVAL_RANK = {
   PRIMARY_INPUT: 0,
   SECONDARY_INPUT: 1,
@@ -549,12 +550,12 @@ function createTransferSwitchSenseResult(
   };
 }
 
-function createTransferSwitchSenseNodeId(nodeId, handleRole, usedNodeIds) {
-  let candidateNodeId = `${TRANSFER_SWITCH_SENSE_PREFIX}${nodeId}__${handleRole}`;
+function createSyntheticSenseNodeId(prefix, nodeId, handleRole, usedNodeIds) {
+  let candidateNodeId = `${prefix}${nodeId}__${handleRole}`;
   let suffix = 1;
 
   while (usedNodeIds.has(candidateNodeId)) {
-    candidateNodeId = `${TRANSFER_SWITCH_SENSE_PREFIX}${nodeId}__${handleRole}__${suffix}`;
+    candidateNodeId = `${prefix}${nodeId}__${handleRole}__${suffix}`;
     suffix += 1;
   }
 
@@ -562,25 +563,39 @@ function createTransferSwitchSenseNodeId(nodeId, handleRole, usedNodeIds) {
   return candidateNodeId;
 }
 
-export function evaluateTransferSwitchSense(nodes, edges) {
+function createSyntheticSenseLoadNode(nodeId, nominalVoltage, position) {
+  return {
+    id: nodeId,
+    type: "load",
+    position: position ?? { x: 0, y: 0 },
+    data: {
+      label: nodeId,
+      nominalVoltage
+    }
+  };
+}
+
+function createTransferSwitchInputAugmentation(nodes, edges, mapNode = (node) => node) {
   const transferSwitchNodes = nodes.filter((node) => isTransferSwitchNodeType(node.type));
 
   if (transferSwitchNodes.length === 0) {
-    return {};
+    return null;
   }
 
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const usedNodeIds = new Set(nodes.map((node) => node.id));
-  const augmentedNodes = [...nodes];
+  const augmentedNodes = nodes.map((node) => mapNode(node));
   const senseNodeIdByTransferSwitchId = {};
 
   transferSwitchNodes.forEach((transferSwitchNode) => {
-    const primarySenseNodeId = createTransferSwitchSenseNodeId(
+    const primarySenseNodeId = createSyntheticSenseNodeId(
+      TRANSFER_SWITCH_SENSE_PREFIX,
       transferSwitchNode.id,
       TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY,
       usedNodeIds
     );
-    const emergencySenseNodeId = createTransferSwitchSenseNodeId(
+    const emergencySenseNodeId = createSyntheticSenseNodeId(
+      TRANSFER_SWITCH_SENSE_PREFIX,
       transferSwitchNode.id,
       TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY,
       usedNodeIds
@@ -592,15 +607,13 @@ export function evaluateTransferSwitchSense(nodes, edges) {
     };
 
     for (const senseNodeId of [primarySenseNodeId, emergencySenseNodeId]) {
-      augmentedNodes.push({
-        id: senseNodeId,
-        type: "load",
-        position: transferSwitchNode.position ?? { x: 0, y: 0 },
-        data: {
-          label: senseNodeId,
-          nominalVoltage: getNodeNominalVoltage(transferSwitchNode)
-        }
-      });
+      augmentedNodes.push(
+        createSyntheticSenseLoadNode(
+          senseNodeId,
+          getNodeNominalVoltage(transferSwitchNode),
+          transferSwitchNode.position
+        )
+      );
     }
   });
 
@@ -629,11 +642,53 @@ export function evaluateTransferSwitchSense(nodes, edges) {
     };
   });
 
-  const senseFlowResult = evaluatePowerFlow(augmentedNodes, augmentedEdges);
+  return {
+    transferSwitchNodes,
+    nodeById,
+    augmentedNodes,
+    augmentedEdges,
+    senseNodeIdByTransferSwitchId
+  };
+}
+
+function createTransferSwitchSourceCandidate(sourceNode) {
+  if (!sourceNode || !isRootSourceType(sourceNode.type)) {
+    return null;
+  }
+
+  return {
+    nodeId: sourceNode.id,
+    kind: sourceNode.type,
+    syncGroup: normalizeSyncGroup(sourceNode.data?.syncGroup),
+    nominalVoltage: getNodeNominalVoltage(sourceNode)
+  };
+}
+
+function createTransferSwitchSupplyResult(sourceIds, nodeById) {
+  return (Array.isArray(sourceIds) ? sourceIds : [])
+    .map((sourceId) => createTransferSwitchSourceCandidate(nodeById.get(sourceId)))
+    .filter((candidate) => candidate !== null)
+    .sort((leftCandidate, rightCandidate) =>
+      leftCandidate.nodeId.localeCompare(rightCandidate.nodeId)
+    );
+}
+
+export function evaluateTransferSwitchSense(nodes, edges) {
+  const transferSwitchAugmentation = createTransferSwitchInputAugmentation(nodes, edges);
+
+  if (!transferSwitchAugmentation) {
+    return {};
+  }
+
+  const senseFlowResult = evaluatePowerFlow(
+    transferSwitchAugmentation.augmentedNodes,
+    transferSwitchAugmentation.augmentedEdges
+  );
   const transferSwitchSenseByNodeId = {};
 
-  transferSwitchNodes.forEach((transferSwitchNode) => {
-    const senseNodeIds = senseNodeIdByTransferSwitchId[transferSwitchNode.id];
+  transferSwitchAugmentation.transferSwitchNodes.forEach((transferSwitchNode) => {
+    const senseNodeIds =
+      transferSwitchAugmentation.senseNodeIdByTransferSwitchId[transferSwitchNode.id];
     const primarySenseNodeId = senseNodeIds[TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY];
     const emergencySenseNodeId = senseNodeIds[TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY];
 
@@ -652,6 +707,111 @@ export function evaluateTransferSwitchSense(nodes, edges) {
   });
 
   return transferSwitchSenseByNodeId;
+}
+
+export function evaluateTransferSwitchSupply(nodes, edges) {
+  const transferSwitchAugmentation = createTransferSwitchInputAugmentation(
+    nodes,
+    edges,
+    (node) =>
+      isRootSourceType(node.type)
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              isSourceOnline: true
+            }
+          }
+        : node
+  );
+
+  if (!transferSwitchAugmentation) {
+    return {};
+  }
+
+  const supplyFlowResult = evaluatePowerFlow(
+    transferSwitchAugmentation.augmentedNodes,
+    transferSwitchAugmentation.augmentedEdges
+  );
+  const transferSwitchSupplyByNodeId = {};
+
+  transferSwitchAugmentation.transferSwitchNodes.forEach((transferSwitchNode) => {
+    const senseNodeIds =
+      transferSwitchAugmentation.senseNodeIdByTransferSwitchId[transferSwitchNode.id];
+    const primarySenseNodeId = senseNodeIds[TRANSFER_SWITCH_ACTIVE_SOURCE.PRIMARY];
+    const emergencySenseNodeId = senseNodeIds[TRANSFER_SWITCH_ACTIVE_SOURCE.EMERGENCY];
+
+    transferSwitchSupplyByNodeId[transferSwitchNode.id] = {
+      primary: createTransferSwitchSupplyResult(
+        supplyFlowResult.sourceIdsByNodeId[primarySenseNodeId],
+        transferSwitchAugmentation.nodeById
+      ),
+      emergency: createTransferSwitchSupplyResult(
+        supplyFlowResult.sourceIdsByNodeId[emergencySenseNodeId],
+        transferSwitchAugmentation.nodeById
+      )
+    };
+  });
+
+  return transferSwitchSupplyByNodeId;
+}
+
+export function evaluateUpsSense(nodes, edges) {
+  const upsNodes = nodes.filter((node) => isUpsNodeType(node.type));
+
+  if (upsNodes.length === 0) {
+    return {};
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const usedNodeIds = new Set(nodes.map((node) => node.id));
+  const augmentedNodes = [...nodes];
+  const senseNodeIdByUpsId = {};
+
+  upsNodes.forEach((upsNode) => {
+    const inputSenseNodeId = createSyntheticSenseNodeId(
+      UPS_SENSE_PREFIX,
+      upsNode.id,
+      UPS_HANDLE_ID.INPUT,
+      usedNodeIds
+    );
+
+    senseNodeIdByUpsId[upsNode.id] = inputSenseNodeId;
+    augmentedNodes.push(
+      createSyntheticSenseLoadNode(
+        inputSenseNodeId,
+        getNodeNominalVoltage(upsNode),
+        upsNode.position
+      )
+    );
+  });
+
+  const augmentedEdges = edges.map((edge) => {
+    const targetNode = nodeById.get(edge.target);
+
+    if (!isUpsNodeType(targetNode?.type)) {
+      return edge;
+    }
+
+    return {
+      ...edge,
+      target: senseNodeIdByUpsId[targetNode.id],
+      targetHandle: undefined
+    };
+  });
+
+  const senseFlowResult = evaluatePowerFlow(augmentedNodes, augmentedEdges);
+
+  return Object.fromEntries(
+    upsNodes.map((upsNode) => [
+      upsNode.id,
+      {
+        input:
+          senseFlowResult.powerStateByNodeId[senseNodeIdByUpsId[upsNode.id]] ??
+          NODE_POWER_STATE.DEAD
+      }
+    ])
+  );
 }
 
 export function createTopologyKey(nodes, edges) {

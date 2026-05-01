@@ -635,8 +635,9 @@
 - Persistence is local-browser scoped only; no remote sync, revision history, or multi-user merge workflow exists.
 - `Clear Yard` remains destructive with no confirmation/undo stack.
 - Source controls are now available both node-local and via SCADA, and Phase 12 adds linear scenario playback, but there is still no scripted SOO automation, batch editing, timeline branching, or timed autoplay layer.
-- ATS nodes now prevent primary/emergency source paralleling internally, but they do not yet implement automatic transfer, source-fail sensing, permissive timers, or neutral-position logic.
-- UPS nodes now model directional line-vs-load isolation, but they do not yet implement separate rectifier / bypass inputs, maintenance bypass paths, automatic source-fail sensing, battery depletion, or charger-state behavior.
+- ATS nodes now prevent primary/emergency source paralleling internally and now implement automatic source-fail sensing plus timed transfer/retransfer, but they still do not model richer permissives, neutral positions, or non-overlap timing windows.
+- UPS nodes now model directional line-vs-load isolation plus automatic line-loss battery transfer and return-to-normal behavior, but they do not yet implement separate rectifier / bypass inputs, maintenance bypass paths, battery depletion, or charger-state behavior.
+- Generators now support ATS-driven autostart, but they do not yet model warmup delays, cooldown, auto-stop, or broader plant-wide orchestration outside ATS emergency corridors.
 - PTX primary daisy-chains are currently modeled as always-continuous internal buses; explicit S1/S2-style MV switch states or isolation points are not yet operator-editable.
 - PTX current metadata remains intentionally undefined; the repo does not yet model whether transformer current ratings belong on the primary, secondary, or both sides.
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
@@ -789,3 +790,18 @@
   - ATS automation still models only a preferred-primary two-position device. There is no neutral position, permissive window, break-before-make overlap timing, or richer STS policy surface yet.
   - Auto ATS throws are operational runtime events only; they do not yet become first-class MOP steps or timeline artifacts.
   - UI coverage remains engine/controller-first. The repo still lacks DOM-level automation for Transfer Switch node controls, countdown rendering, or modal editing workflows.
+
+## Working Tree Update: UPS Auto Battery Transfer and ATS-Driven Generator Autostart (`2026-05-01`)
+- Major additions:
+  - Extended `src/topology/automationControl.js`, `src/nodes/nodeData.js`, and `src/persistence/topologyPersistence.js` so generators and UPS nodes now carry canonical manual/auto `controlMode` metadata with schema-v1 validation and backward-compatible default normalization.
+  - Added `evaluateTransferSwitchSupply(...)` and `evaluateUpsSense(...)` to `src/engine/powerFlow.js`, plus new engine tests, so the app can now discover ATS input source candidates even when a root source is offline and independently sense UPS line input without energizing the UPS output path by mistake.
+  - Added `src/hooks/generatorAutomation.js` / `useGeneratorAutomation.js` and `src/hooks/upsAutomation.js` / `useUpsAutomation.js` so ATS-driven generator autostart and UPS line-loss battery transfer now live as pure controller logic wrapped by focused React hooks instead of leaking into the engine or node components.
+  - Reworked `src/App.jsx`, `src/nodes/GeneratorNode.jsx`, `src/nodes/UpsNode.jsx`, `src/components/LeftRail.jsx`, `src/components/ScadaPanel.jsx`, and `src/components/NodePropertiesModal.jsx` so operators can switch generators and UPS devices between Manual and Auto mode, see live generator/UPS automation status, and manually fan a UPS mode change across every UPS in the same sync group.
+- Current engine state:
+  - `evaluatePowerFlow(...)` remains the authoritative conductive-state engine. Generator autostart and UPS mode throws are still runtime/UI consequences layered on top of engine sense output rather than hidden inside graph traversal.
+  - ATS transfer automation remains transfer-only. The new generator controller runs first, marks eligible auto generators online, and lets the existing ATS controller wait for the emergency side to become truly `Live` before starting any transfer delay.
+  - UPS automation now reacts to sensed input transitions only: Auto mode moves `Normal -> Battery` on line loss when the battery is available and `Battery -> Normal` on healthy input return, while `Bypass` remains operator-only and manual sync-group throws do not explode MOP history.
+- Known gaps after this working-tree update:
+  - Generator automation is intentionally narrow in this pass: ATS-driven start only, immediate online transition, no warmup/cooldown, and no auto-stop behavior yet.
+  - UPS automation still models only one line input and one load output; there is no separate rectifier, static bypass, maintenance bypass, or richer return-policy matrix yet.
+  - UI coverage remains engine/controller-first. The repo still lacks DOM-level automation for generator auto/manual controls, UPS auto/manual controls, and sync-group operator workflows.
