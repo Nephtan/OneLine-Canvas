@@ -31,6 +31,7 @@
 | Working Tree | `working-tree` | `2026-04-20` | `Keep manual edge centers attached during rigid group node moves` | Implemented |
 | Working Tree | `working-tree` | `2026-04-22` | `Add hybrid selective protection, bolted faults, and edge properties` | Implemented |
 | Working Tree | `working-tree` | `2026-04-22` | `Restore edge-properties gear access for breakers and wires` | Implemented |
+| Working Tree | `working-tree` | `2026-05-01` | `Audit documentation backlog and prioritize import-validation hardening` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -695,3 +696,17 @@
   - `App.jsx` still uses `activePropertiesEdgeId` plus `openEdgeProperties(edge.id)` / `applyEdgeProperties(...)` as the single modal open/save path for breaker and wire metadata edits.
 - Known gaps after this working-tree update:
   - Edge overlay controls still rely on manual UI verification because the repo does not yet carry automated coverage for edge-properties interactions.
+
+## Working Tree Update: Documentation Backlog Audit (`2026-05-01`)
+- Major additions:
+  - Reviewed `AGENTS.md`, `README.md`, `OUTSTANDING.md`, `handoff.md`, and `DEPENDENCIES.md` against the current source tree to identify the highest-leverage unresolved gap.
+  - Confirmed that app-level import safety is still shallow in `src/App.jsx`: persisted and imported payloads are accepted when they only satisfy top-level `{ nodes, edges }` array shape checks, after which `normalizeGraphState(...)` silently backfills canonical node and edge data.
+  - Confirmed that engine coverage is deep in `src/engine/powerFlow.test.js` and `src/engine/protection.test.js`, while direct coverage for malformed node payloads, bad handle assignments, and metadata persistence across create/hydrate/export/import remains thin.
+- Current engine state:
+  - `evaluatePowerFlow(...)` and `evaluateProtectionState(...)` remain unchanged; this review did not alter traversal, voltage propagation, or selective trip behavior.
+  - Canonical metadata normalization already has a strong architectural home in `src/nodes/nodeData.js` and `src/edges/edgeData.js`, which makes validation hardening the cleanest next increment without coupling new physics into the React Flow layer.
+- Recommended next step:
+  - Implement deep, version-aware graph import validation ahead of `normalizePersistedAppState(...)`, then add tests that prove canonical electrical metadata survives create, hydrate, export, and import flows without silently accepting malformed payloads.
+- Known gaps after this working-tree update:
+  - Invalid node payloads, malformed electrical metadata, and unsupported handle assignments are still not surfaced as first-class operator diagnostics.
+  - Node-side metadata normalization coverage is still much lighter than engine traversal/protection coverage, especially for imported and hydrated graphs.
