@@ -25,8 +25,7 @@ import { getDefaultEdgeData, normalizeEdgeData } from "./edges/edgeData";
 import usePowerFlow from "./hooks/usePowerFlow";
 import { EDGE_POWER_STATE } from "./engine/powerFlow";
 import { BREAKER_STATE, EDGE_DEVICE_KIND, TRIP_REASON } from "./engine/protectionModel";
-import EquipmentPalette, { DRAG_MIME_TYPE } from "./components/EquipmentPalette";
-import ScadaPanel from "./components/ScadaPanel";
+import LeftRail, { DRAG_MIME_TYPE } from "./components/LeftRail";
 import EdgePropertiesModal from "./components/EdgePropertiesModal";
 import NodePropertiesModal from "./components/NodePropertiesModal";
 import {
@@ -1468,15 +1467,13 @@ function App() {
       />
 
       <div className="flex h-full w-full overflow-hidden">
-        <EquipmentPalette
+        <LeftRail
           onDragStart={onDragStart}
           onSaveToFile={onSaveToFile}
           onLoadFromFile={onLoadFromFile}
           onClearYard={onClearYard}
           edgeDrawMode={edgeDrawMode}
           onChangeEdgeDrawMode={setEdgeDrawMode}
-        />
-        <ScadaPanel
           nodes={nodes}
           edges={edges}
           powerStateByNodeId={powerStateByNodeId}

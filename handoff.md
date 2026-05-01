@@ -33,6 +33,7 @@
 | Working Tree | `working-tree` | `2026-04-22` | `Restore edge-properties gear access for breakers and wires` | Implemented |
 | Working Tree | `working-tree` | `2026-05-01` | `Audit documentation backlog and prioritize import-validation hardening` | Implemented |
 | Working Tree | `working-tree` | `2026-05-01` | `Implement schema-v1 persistence validation and metadata round-trip tests` | Implemented |
+| Working Tree | `working-tree` | `2026-05-01` | `Consolidate left dock into single tabbed command rail` | Implemented |
 | Maintenance | `c5c1a2b5d41f3648ce5c0c2c387b7a5b92815bd0` | `2026-04-14` | `Add DEPENDENCIES.md dependency inventory` | Committed |
 | Maintenance | `bb16e038263c94da64e6ed1f8d4ceb44e2358ae1` | `2026-04-14` | `Add dependency self-validation tooling and setup guidance` | Committed |
 | Maintenance | `cafe8dbffcbd0d7ec1414aab84b5395a34c7d35c` | `2026-04-14` | `Repair Windows npm launch path for dependency self-check` | Committed |
@@ -543,6 +544,8 @@
   - Refined `Fed From` precedence so switchboard main-input arrivals outrank bottom-return and source-side return corridors, with the CH3 ExampleTopology fixture locked in as a regression guard.
   - Added app-local keyboard copy/paste for selected subgraphs, including internal-edge filtering, cursor-anchored paste placement, grid-snapped geometry, and preserved edge midpoint routing.
   - Manual breaker and wire midpoint anchors now translate with rigid multi-node drags when both edge endpoints move together, preventing shift-box selection moves from leaving custom edge centers behind.
+  - Replaced the old dual-rail `EquipmentPalette + ScadaPanel` stack with one `LeftRail` command dock that keeps a compact live status shelf visible at all times and moves the operator workflows behind `Build`, `Operate`, and `Diagnostics` tabs.
+  - Repacked the build workflow into a denser two-column equipment grid and moved SCADA fault, validation, source, UPS, breaker-reset, and MOP surfaces into one tabbed scroll region so a 1080p desktop no longer requires browser zoom just to expose every panel.
 
 ### Current Dynamic Graph Engine Behavior
 - Traversal:
@@ -578,6 +581,7 @@
   - Remote source actuation and breaker reset are App-level state mutations layered on top of the existing engine output.
   - The MOP recorder also remains App/UI-only: it records operator actions, stores canonical snapshots, and replays them by overwriting `nodes`/`edges` without duplicating any engine calculations.
   - SCADA now includes a UPS lineup with live operating-mode buttons, battery-availability visibility, and node power-state telemetry without duplicating any UPS physics inside the panel.
+  - Left-side operator surfaces now live inside one `LeftRail` dock with persistent summary telemetry plus tab-local content regions for build controls, live operations, and diagnostics; the layout changed, but the callback contracts and engine data flow did not.
 - Canvas ergonomics:
   - Node and edge deletion now flows through native React Flow `deleteElements()` so topology pruning invalidates the graph naturally without manual dangling-edge cleanup logic.
   - New user-drawn connections always carry an explicit custom edge type (`breaker` or `standard`); React Flow fallback edges are no longer part of the supported topology contract.
@@ -637,6 +641,7 @@
 - Fresh Windows environments still require manual Node installation before `npm ci`, `npm run check:deps`, `npm test`, or `npm run build` can execute.
 - `npm run check:deps` currently assumes a clean `node_modules`; Vite temp directories such as `.vite` and `.vite-temp` can trigger false-positive extraneous-package failures after normal dev/build/test activity.
 - Visual delete controls, grid-snapped layout ergonomics, rigid group midpoint translation, edge midpoint dragging, and connection draw-mode workflows are now present, but there is still no automated UI coverage for these operator paths.
+- The new command rail is intentionally tuned for desktop `1920x1080` and larger; there is still no dedicated small-screen or tablet collapse behavior below that target footprint.
 - Multi-feed nodes now intentionally collapse to one preferred `Fed From` label, but there is still no secondary card-level cue for the other simultaneous live feeders.
 - Copy/paste is app-local and keyboard-driven only; there is still no toolbar affordance, no external clipboard serialization contract, and no undo stack beyond browser refresh/local persistence.
 
@@ -738,3 +743,17 @@
 - Known gaps after this working-tree update:
   - The first live diagnostics pass is intentionally hard-error-only; there is still no advisory warning tier for permissive-but-suspicious generic bus wiring or other non-blocking modeling guidance.
   - Rejected import/storage reports only retain the latest failure and only focus the canvas when the referenced node or edge ids exist on the active yard.
+
+## Working Tree Update: Single-Rail Command Dock (`2026-05-01`)
+- Major additions:
+  - Added `src/components/LeftRail.jsx` as the new left-docked operator boundary and removed the old side-by-side `EquipmentPalette` / `ScadaPanel` mount from `src/App.jsx`.
+  - Consolidated the palette, SCADA, protection, and validation surfaces into one `21rem`-class command rail with a persistent summary shelf plus `Build`, `Operate`, and `Diagnostics` tabs.
+  - Repacked equipment drops into a denser two-column draggable grid, moved topology I/O and connection draw-mode controls into the build tab, and converted source telemetry from a narrow table into compact cards that fit the reduced rail width.
+  - Collapsed the old nested SCADA scroll islands into one tab-local scroll region so MOP playback, breaker reset, UPS mode throws, fault summaries, and validation focus cards remain reachable on a 1080p desktop without browser zoom.
+- Current engine state:
+  - `evaluatePowerFlow(...)`, `evaluateProtectionState(...)`, persistence validation, MOP snapshotting, and every existing App-level callback contract remain unchanged.
+  - The refactor is layout-only: React Flow still receives the same canonical node and edge state, and the left rail remains a pure UI controller over existing node, edge, and diagnostics mutations.
+  - Engine and persistence regression coverage remained green after the rail swap, and the single-file Vite build still emits one inlined `dist/index.html`.
+- Known gaps after this working-tree update:
+  - The consolidated rail is intentionally optimized for desktop `1920x1080` and larger only; smaller-screen collapse patterns are not implemented yet.
+  - The repo still has no dedicated UI automation around the new tabbed rail, source cards, UPS cards, validation cards, or tab-switching workflows.

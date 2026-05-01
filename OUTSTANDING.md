@@ -45,6 +45,7 @@ This file is the live backlog for unresolved modeling, workflow, testing, and do
 
 ## UI and Workflow Coverage
 - [ ] Add automated UI coverage for grid snapping, rigid group node moves with manual edge midpoint translation, edge-properties and delete controls, copy/paste flows, breaker-vs-wire draw mode selection, SCADA actions, and MOP recording or playback flows.
+- [ ] Extend the new single-rail command dock beyond desktop `1080p` into deliberate collapse behavior for smaller screens and tablet-class widths.
 - [ ] Decide whether manual edge routing needs reset-to-auto controls, richer multi-bend editing, or obstacle-aware autorouting beyond the current single midpoint anchor.
 - [ ] Expand the broader properties modal into bulk-edit workflows and richer device-rating workflows so large projects do not require one-by-one metadata entry.
 - [ ] Add UI validation or guided affordances around new multi-landing cases such as switchboard bottom-bus targets so operators can tell when a landing is a return corridor versus the preferred main feed.
